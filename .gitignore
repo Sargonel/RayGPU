@@ -1,0 +1,6 @@
+/main.exe
+/build/
+*.obj
+*.pdb
+.vscode/
+/d3dcompiler_47.dll
