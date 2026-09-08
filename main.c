@@ -81,6 +81,7 @@ int main(void)
     SetWindowMinSize(640, 360);
     badge = LoadRenderTexture(240, 120);
     tintShader = LoadShaderFromMemory(NULL,
+        "// @raygpu_uniform tint 0\n"
         "struct V { @builtin(position) position: vec4f, @location(0) uv: vec2f, @location(1) color: vec4f };"
         "struct Uniforms { values: array<vec4f, 128> };"
         "@group(0) @binding(0) var smp: sampler; @group(0) @binding(1) var tex: texture_2d<f32>;"

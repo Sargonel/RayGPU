@@ -9,6 +9,7 @@
     const shaders = new Map();
     const events = new AbortController();
     let device, context, buffer, wasm, pipelines, sampler, textureLayout, uniformLayout, defaultPipelineLayout, pipelineLayout, audioContext, masterGain;
+    let depthTexture, depthWidth=0, depthHeight=0;
     const sounds = new Map();
     let stopped = false, targetFPS = 60, lastFrame;
     function close() {
@@ -18,6 +19,7 @@
         for (const entry of textures.values()) entry.texture.destroy();
         textures.clear();
         if (buffer) buffer.destroy();
+        if (depthTexture) depthTexture.destroy();
         if (context) context.unconfigure();
         if (device) device.destroy();
         if (audioContext) audioContext.close();
@@ -41,8 +43,8 @@
             struct V { @builtin(position) position: vec4f, @location(0) uv: vec2f, @location(1) color: vec4f };
             @group(0) @binding(0) var smp: sampler;
             @group(0) @binding(1) var tex: texture_2d<f32>;
-            @vertex fn vs(@location(0) p: vec2f, @location(1) uv: vec2f, @location(2) c: vec4f) -> V {
-                var o: V; o.position=vec4f(p,0,1); o.uv=uv; o.color=c; return o;
+            @vertex fn vs(@location(0) p: vec2f, @location(1) uv: vec2f, @location(2) c: vec4f, @location(3) z: f32) -> V {
+                var o: V; o.position=vec4f(p,z,1); o.uv=uv; o.color=c; return o;
             }
             @fragment fn fs(v: V) -> @location(0) vec4f { return textureSample(tex,smp,v.uv)*v.color; }
         `});
@@ -66,13 +68,14 @@
         defaultPipelineLayout=device.createPipelineLayout({bindGroupLayouts:[textureLayout]});
         pipelineLayout=device.createPipelineLayout({bindGroupLayouts:[textureLayout,uniformLayout]});
         const pipelineDescriptor = blend => ({layout:defaultPipelineLayout,
-            vertex:{module:shader,entryPoint:"vs",buffers:[{arrayStride:20,attributes:[
+            vertex:{module:shader,entryPoint:"vs",buffers:[{arrayStride:24,attributes:[
                 {shaderLocation:0,offset:0,format:"float32x2"},{shaderLocation:1,offset:8,format:"float32x2"},
-                {shaderLocation:2,offset:16,format:"unorm8x4"}]}]},
+                {shaderLocation:2,offset:20,format:"unorm8x4"},{shaderLocation:3,offset:16,format:"float32"}]}]},
             fragment:{module:shader,entryPoint:"fs",targets:[{format,blend}]},
-            primitive:{topology:"triangle-list",cullMode:"none"}});
+            primitive:{topology:"triangle-list",cullMode:"none"},
+            depthStencil:{format:"depth24plus",depthWriteEnabled:true,depthCompare:"less-equal"}});
         pipelines = await Promise.all(blendStates.map(blend => device.createRenderPipelineAsync(pipelineDescriptor(blend))));
-        buffer = device.createBuffer({size: 262144 * 20, usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST});
+        buffer = device.createBuffer({size: 262144 * 24, usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST});
         sampler = device.createSampler({magFilter: "nearest", minFilter: "nearest",
             addressModeU: "repeat", addressModeV: "repeat"});
         const textDecoder = new TextDecoder();
@@ -200,7 +203,8 @@
                 const group=device.createBindGroup({layout:textureLayout,entries:[
                     {binding:0,resource:sampler},{binding:1,resource:view}
                 ]});
-                textures.set(id,{texture,view,group,sampler,width,height});
+                const depthTexture=device.createTexture({size:[width,height],format:"depth24plus",usage:GPUTextureUsage.RENDER_ATTACHMENT});
+                textures.set(id,{texture,view,group,sampler,width,height,depthTexture,depthView:depthTexture.createView()});
             },
             texture_update: (id, x, y, width, height, pointer) => {
                 const entry = textures.get(id);
@@ -225,15 +229,16 @@
                     {binding: 0, resource: entry.sampler}, {binding: 1, resource: entry.view}
                 ]});
             },
-            unload: id => { const entry = textures.get(id); if (entry) entry.texture.destroy(); textures.delete(id); },
+            unload: id => { const entry = textures.get(id); if (entry) { entry.texture.destroy();if(entry.depthTexture)entry.depthTexture.destroy(); } textures.delete(id); },
             shader_load: (id, vsPointer, fsPointer) => {
                 try {
                     const vs=device.createShaderModule({code:readText(vsPointer)}),fs=device.createShaderModule({code:readText(fsPointer)});
                     const list=blendStates.map(blend=>device.createRenderPipeline({layout:pipelineLayout,
-                        vertex:{module:vs,entryPoint:"vs",buffers:[{arrayStride:20,attributes:[
+                        vertex:{module:vs,entryPoint:"vs",buffers:[{arrayStride:24,attributes:[
                             {shaderLocation:0,offset:0,format:"float32x2"},{shaderLocation:1,offset:8,format:"float32x2"},
-                            {shaderLocation:2,offset:16,format:"unorm8x4"}]}]},
-                        fragment:{module:fs,entryPoint:"fs",targets:[{format,blend}]},primitive:{topology:"triangle-list",cullMode:"none"}}));
+                            {shaderLocation:2,offset:20,format:"unorm8x4"},{shaderLocation:3,offset:16,format:"float32"}]}]},
+                        fragment:{module:fs,entryPoint:"fs",targets:[{format,blend}]},primitive:{topology:"triangle-list",cullMode:"none"},
+                        depthStencil:{format:"depth24plus",depthWriteEnabled:true,depthCompare:"less-equal"}}));
                     const uniformBuffer=device.createBuffer({size:2048,usage:GPUBufferUsage.UNIFORM|GPUBufferUsage.COPY_DST});
                     const uniformGroup=device.createBindGroup({layout:uniformLayout,entries:[{binding:0,resource:{buffer:uniformBuffer,size:2048}}]});
                     shaders.set(id,{pipelines:list,uniformBuffer,uniformGroup});return 1;
@@ -248,14 +253,18 @@
                 if (stopped) return;
                 const target=targetId ? textures.get(targetId) : null;
                 if (targetId && !target) return;
+                if(!target&&(depthWidth!==canvas.width||depthHeight!==canvas.height)){
+                    if(depthTexture)depthTexture.destroy();depthWidth=canvas.width;depthHeight=canvas.height;
+                    depthTexture=device.createTexture({size:[depthWidth,depthHeight],format:"depth24plus",usage:GPUTextureUsage.RENDER_ATTACHMENT});
+                }
                 const encoder = device.createCommandEncoder();
                 const pass = encoder.beginRenderPass({colorAttachments: [{
                     view: target ? target.view : context.getCurrentTexture().createView(), loadOp: "clear", storeOp: "store",
                     clearValue: [(color & 255)/255, ((color>>>8)&255)/255, ((color>>>16)&255)/255, (color>>>24)/255]
-                }]});
+                }],depthStencilAttachment:{view:target?target.depthView:depthTexture.createView(),depthLoadOp:"clear",depthStoreOp:"store",depthClearValue:1}});
                 if (count) {
-                    device.queue.writeBuffer(buffer, 0, new Uint8Array(wasm.memory.buffer, vertices, count*20));
-                    pass.setVertexBuffer(0, buffer, 0, count*20);
+                    device.queue.writeBuffer(buffer, 0, new Uint8Array(wasm.memory.buffer, vertices, count*24));
+                    pass.setVertexBuffer(0, buffer, 0, count*24);
                     const commands = new Uint32Array(wasm.memory.buffer, batches, batchCount*9);
                     for (let i=0; i<commands.length; i+=9) {
                         const entry = textures.get(commands[i+2]);

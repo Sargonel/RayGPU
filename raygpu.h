@@ -45,9 +45,38 @@ typedef struct Music {
 typedef struct Camera3D { Vector3 position,target,up; float fovy; int projection; } Camera3D;
 typedef Camera3D Camera;
 typedef struct Camera2D { Vector2 offset,target; float rotation,zoom; } Camera2D;
+typedef struct Mesh {
+    int vertexCount,triangleCount;
+    float *vertices,*texcoords,*texcoords2,*normals,*tangents;
+    unsigned char *colors; unsigned short *indices;
+    float *animVertices,*animNormals; unsigned char *boneIds; float *boneWeights;
+    Matrix *boneMatrices; int boneCount; unsigned int vaoId,*vboId;
+} Mesh;
+typedef struct MaterialMap { Texture2D texture; Color color; float value; } MaterialMap;
+typedef struct Material { Shader shader; MaterialMap *maps; float params[4]; } Material;
+typedef struct Transform { Vector3 translation; Quaternion rotation; Vector3 scale; } Transform;
+typedef struct BoneInfo { char name[32]; int parent; } BoneInfo;
+typedef struct Model {
+    Matrix transform; int meshCount,materialCount; Mesh *meshes; Material *materials;
+    int *meshMaterial; int boneCount; BoneInfo *bones; Transform *bindPose;
+} Model;
+typedef struct ModelAnimation {
+    int boneCount,frameCount; BoneInfo *bones; Transform **framePoses; char name[32];
+} ModelAnimation;
 typedef struct Ray { Vector3 position,direction; } Ray;
 typedef struct RayCollision { bool hit; float distance; Vector3 point,normal; } RayCollision;
 typedef struct BoundingBox { Vector3 min,max; } BoundingBox;
+typedef enum CameraProjection {
+    CAMERA_PERSPECTIVE=0, CAMERA_ORTHOGRAPHIC
+} CameraProjection;
+typedef enum MaterialMapIndex {
+    MATERIAL_MAP_ALBEDO=0,MATERIAL_MAP_METALNESS,MATERIAL_MAP_NORMAL,
+    MATERIAL_MAP_ROUGHNESS,MATERIAL_MAP_OCCLUSION,MATERIAL_MAP_EMISSION,
+    MATERIAL_MAP_HEIGHT,MATERIAL_MAP_CUBEMAP,MATERIAL_MAP_IRRADIANCE,
+    MATERIAL_MAP_PREFILTER,MATERIAL_MAP_BRDF
+} MaterialMapIndex;
+#define MATERIAL_MAP_DIFFUSE MATERIAL_MAP_ALBEDO
+#define MATERIAL_MAP_SPECULAR MATERIAL_MAP_METALNESS
 
 /* raylib-compatible color constants. */
 #define LIGHTGRAY  ((Color){200,200,200,255})
@@ -201,6 +230,13 @@ int GetShaderLocation(Shader shader,const char *uniformName);
 void SetShaderValue(Shader shader,int locIndex,const void *value,int uniformType);
 void SetShaderValueV(Shader shader,int locIndex,const void *value,int uniformType,int count);
 void SetShaderValueMatrix(Shader shader,int locIndex,Matrix mat);
+void BeginMode3D(Camera3D camera);
+void EndMode3D(void);
+Ray GetScreenToWorldRay(Vector2 position,Camera camera);
+Ray GetScreenToWorldRayEx(Vector2 position,Camera camera,int width,int height);
+Vector2 GetWorldToScreen(Vector3 position,Camera camera);
+Vector2 GetWorldToScreenEx(Vector3 position,Camera camera,int width,int height);
+Matrix GetCameraMatrix(Camera camera);
 void BeginMode2D(Camera2D camera);
 void EndMode2D(void);
 Vector2 GetWorldToScreen2D(Vector2 position,Camera2D camera);
@@ -209,6 +245,67 @@ Matrix GetCameraMatrix2D(Camera2D camera);
 void SetShapesTexture(Texture2D texture,Rectangle source);
 Texture2D GetShapesTexture(void);
 Rectangle GetShapesTextureRectangle(void);
+void DrawLine3D(Vector3 startPos,Vector3 endPos,Color color);
+void DrawPoint3D(Vector3 position,Color color);
+void DrawCircle3D(Vector3 center,float radius,Vector3 rotationAxis,float rotationAngle,Color color);
+void DrawTriangle3D(Vector3 v1,Vector3 v2,Vector3 v3,Color color);
+void DrawTriangleStrip3D(const Vector3 *points,int pointCount,Color color);
+void DrawCube(Vector3 position,float width,float height,float length,Color color);
+void DrawCubeV(Vector3 position,Vector3 size,Color color);
+void DrawCubeWires(Vector3 position,float width,float height,float length,Color color);
+void DrawCubeWiresV(Vector3 position,Vector3 size,Color color);
+void DrawSphere(Vector3 centerPos,float radius,Color color);
+void DrawSphereEx(Vector3 centerPos,float radius,int rings,int slices,Color color);
+void DrawSphereWires(Vector3 centerPos,float radius,int rings,int slices,Color color);
+void DrawCylinder(Vector3 position,float radiusTop,float radiusBottom,float height,int slices,Color color);
+void DrawCylinderEx(Vector3 startPos,Vector3 endPos,float startRadius,float endRadius,int sides,Color color);
+void DrawCylinderWires(Vector3 position,float radiusTop,float radiusBottom,float height,int slices,Color color);
+void DrawCylinderWiresEx(Vector3 startPos,Vector3 endPos,float startRadius,float endRadius,int sides,Color color);
+void DrawCapsule(Vector3 startPos,Vector3 endPos,float radius,int slices,int rings,Color color);
+void DrawCapsuleWires(Vector3 startPos,Vector3 endPos,float radius,int slices,int rings,Color color);
+void DrawPlane(Vector3 centerPos,Vector2 size,Color color);
+void DrawRay(Ray ray,Color color);
+void DrawGrid(int slices,float spacing);
+Model LoadModel(const char *fileName);
+ModelAnimation *LoadModelAnimations(const char *fileName,int *animCount);
+void UpdateModelAnimation(Model model,ModelAnimation anim,int frame);
+void UpdateModelAnimationBones(Model model,ModelAnimation anim,int frame);
+void UnloadModelAnimation(ModelAnimation anim);
+void UnloadModelAnimations(ModelAnimation *animations,int animCount);
+bool IsModelAnimationValid(Model model,ModelAnimation anim);
+Model LoadModelFromMesh(Mesh mesh);
+bool IsModelValid(Model model);
+void UnloadModel(Model model);
+BoundingBox GetModelBoundingBox(Model model);
+void DrawModel(Model model,Vector3 position,float scale,Color tint);
+void DrawModelEx(Model model,Vector3 position,Vector3 rotationAxis,float rotationAngle,Vector3 scale,Color tint);
+void DrawModelWires(Model model,Vector3 position,float scale,Color tint);
+void DrawModelWiresEx(Model model,Vector3 position,Vector3 rotationAxis,float rotationAngle,Vector3 scale,Color tint);
+void DrawModelPoints(Model model,Vector3 position,float scale,Color tint);
+void DrawModelPointsEx(Model model,Vector3 position,Vector3 rotationAxis,float rotationAngle,Vector3 scale,Color tint);
+void DrawBoundingBox(BoundingBox box,Color color);
+void UploadMesh(Mesh *mesh,bool dynamic);
+void UpdateMeshBuffer(Mesh mesh,int index,const void *data,int dataSize,int offset);
+void UnloadMesh(Mesh mesh);
+void DrawMesh(Mesh mesh,Material material,Matrix transform);
+void DrawMeshInstanced(Mesh mesh,Material material,const Matrix *transforms,int instances);
+BoundingBox GetMeshBoundingBox(Mesh mesh);
+Mesh GenMeshPlane(float width,float length,int resX,int resZ);
+Mesh GenMeshCube(float width,float height,float length);
+Mesh GenMeshSphere(float radius,int rings,int slices);
+Material LoadMaterialDefault(void);
+bool IsMaterialValid(Material material);
+void UnloadMaterial(Material material);
+void SetMaterialTexture(Material *material,int mapType,Texture2D texture);
+void SetModelMeshMaterial(Model *model,int meshId,int materialId);
+bool CheckCollisionSpheres(Vector3 center1,float radius1,Vector3 center2,float radius2);
+bool CheckCollisionBoxes(BoundingBox box1,BoundingBox box2);
+bool CheckCollisionBoxSphere(BoundingBox box,Vector3 center,float radius);
+RayCollision GetRayCollisionSphere(Ray ray,Vector3 center,float radius);
+RayCollision GetRayCollisionBox(Ray ray,BoundingBox box);
+RayCollision GetRayCollisionTriangle(Ray ray,Vector3 p1,Vector3 p2,Vector3 p3);
+RayCollision GetRayCollisionQuad(Ray ray,Vector3 p1,Vector3 p2,Vector3 p3,Vector3 p4);
+RayCollision GetRayCollisionMesh(Ray ray,Mesh mesh,Matrix transform);
 void DrawTriangle(Vector2 a,Vector2 b,Vector2 c,Color color);
 void DrawRectangle(int x,int y,int width,int height,Color color);
 void DrawCircle(int x,int y,float radius,Color color);
@@ -527,10 +624,11 @@ static int puts(const char *s) { mr_log(s); return 0; }
 #define MR_MAX_TEXTURES 256
 #define MR_PI 3.14159265358979323846f
 #define MR_DEG2RAD (MR_PI/180.0f)
-typedef struct MRVertex { float x,y,u,v; unsigned char r,g,b,a; } MRVertex;
+typedef struct MRVertex { float x,y,u,v,z; unsigned char r,g,b,a; } MRVertex;
 typedef struct MRTexture {
 #ifdef _WIN32
     WGPUTexture texture; WGPUTextureView view; WGPUBindGroup group; WGPUSampler customSampler;
+    WGPUTexture depthTexture; WGPUTextureView depthView;
 #endif
     unsigned int id; int filter,wrap;
 } MRTexture;
@@ -538,10 +636,10 @@ typedef struct MRShaderEntry {
 #ifdef _WIN32
     WGPURenderPipeline pipelines[6]; WGPUBuffer uniformBuffer; WGPUBindGroup uniformGroup;
 #endif
-    unsigned int id,nameHashes[32]; int locationCount; unsigned char uniforms[32][64];
+    unsigned int id,nameHashes[32]; unsigned char nameSlots[32]; int locationCount; bool explicitLocations; unsigned char uniforms[32][64];
 } MRShaderEntry;
 typedef struct MRBatch { unsigned int first,count,texture,blend,shader,x,y,width,height; } MRBatch;
-_Static_assert(sizeof(MRVertex)==20,"Vertex layout must match raygpu.js");
+_Static_assert(sizeof(MRVertex)==24,"Vertex layout must match raygpu.js");
 _Static_assert(sizeof(MRBatch)==36,"Batch layout must match raygpu.js");
 static struct {
     void (*updateDraw)(void);
@@ -549,6 +647,7 @@ static struct {
     WGPUInstance instance; WGPUAdapter adapter; WGPUDevice device; WGPUQueue queue;
     WGPUSurface surface; WGPUSurfaceConfiguration config;
     WGPURenderPipeline pipelines[6]; WGPUBuffer buffer;
+    WGPUTexture depthTexture; WGPUTextureView depthView; int depthWidth,depthHeight;
     WGPUBindGroupLayout textureLayout,uniformLayout; WGPUSampler sampler;
 #endif
     MRTexture textures[MR_MAX_TEXTURES]; unsigned int nextTexture,white;
@@ -560,7 +659,7 @@ static struct {
     bool buttons[3],clicked[3],buttonReleased[3];
     int keyQueue[16],keyQueueCount,charQueue[16],charQueueCount,exitKey,minWidth,minHeight,maxWidth,maxHeight;
     Vector2 mouse,mouseDelta,wheel,mouseOffset,mouseScale; Color clear; Texture2D shapesTexture; Rectangle shapesSource;
-    Camera2D camera2d; bool camera2dActive,scissorActive; Rectangle scissor; int blendMode;
+    Camera2D camera2d; Camera3D camera3d; bool camera2dActive,camera3dActive,scissorActive; Rectangle scissor; int blendMode;
     unsigned int renderTarget; int targetWidth,targetHeight;
     int width,height,fps; double start,previous,frameStart; float dt;
 #ifdef _WIN32
@@ -785,6 +884,8 @@ void UnloadTexture(Texture2D texture) {
     if (mr.drawing) { puts("raygpu: unload textures outside BeginDrawing/EndDrawing"); return; }
 #ifdef _WIN32
     wgpuBindGroupRelease(t->group); if (t->customSampler) wgpuSamplerRelease(t->customSampler);
+    if (t->depthView) wgpuTextureViewRelease(t->depthView);
+    if (t->depthTexture) wgpuTextureRelease(t->depthTexture);
     wgpuTextureViewRelease(t->view); wgpuTextureRelease(t->texture);
 #else
     mr_web_unload(t->id);
@@ -854,7 +955,7 @@ void SetShapesTexture(Texture2D texture,Rectangle source) {
 }
 Texture2D GetShapesTexture(void) { return mr.shapesTexture; }
 Rectangle GetShapesTextureRectangle(void) { return mr.shapesSource; }
-static const char *mr_default_vertex_wgsl="struct V{@builtin(position)position:vec4f,@location(0)uv:vec2f,@location(1)color:vec4f};@vertex fn vs(@location(0)p:vec2f,@location(1)uv:vec2f,@location(2)c:vec4f)->V{var o:V;o.position=vec4f(p,0,1);o.uv=uv;o.color=c;return o;}";
+static const char *mr_default_vertex_wgsl="struct V{@builtin(position)position:vec4f,@location(0)uv:vec2f,@location(1)color:vec4f};@vertex fn vs(@location(0)p:vec2f,@location(1)uv:vec2f,@location(2)c:vec4f,@location(3)z:f32)->V{var o:V;o.position=vec4f(p,z,1);o.uv=uv;o.color=c;return o;}";
 static const char *mr_default_fragment_wgsl="struct V{@builtin(position)position:vec4f,@location(0)uv:vec2f,@location(1)color:vec4f};@group(0)@binding(0)var smp:sampler;@group(0)@binding(1)var tex:texture_2d<f32>;@fragment fn fs(v:V)->@location(0)vec4f{return textureSample(tex,smp,v.uv)*v.color;}";
 #ifdef _WIN32
 static bool mr_make_shader_pipelines(const char *vsCode,const char *fsCode,WGPURenderPipeline output[6]) {
@@ -862,15 +963,26 @@ static bool mr_make_shader_pipelines(const char *vsCode,const char *fsCode,WGPUR
     WGPUShaderModuleDescriptor vsDesc=WGPU_SHADER_MODULE_DESCRIPTOR_INIT,fsDesc=WGPU_SHADER_MODULE_DESCRIPTOR_INIT;vsDesc.nextInChain=&vsSource.chain;fsDesc.nextInChain=&fsSource.chain;
     WGPUShaderModule vs=wgpuDeviceCreateShaderModule(mr.device,&vsDesc),fs=wgpuDeviceCreateShaderModule(mr.device,&fsDesc);if(!vs||!fs)return false;
     WGPUBindGroupLayout layouts[2]={mr.textureLayout,mr.uniformLayout};WGPUPipelineLayoutDescriptor ld=WGPU_PIPELINE_LAYOUT_DESCRIPTOR_INIT;ld.bindGroupLayoutCount=2;ld.bindGroupLayouts=layouts;WGPUPipelineLayout layout=wgpuDeviceCreatePipelineLayout(mr.device,&ld);
-    WGPUVertexAttribute attributes[3]={WGPU_VERTEX_ATTRIBUTE_INIT,WGPU_VERTEX_ATTRIBUTE_INIT,WGPU_VERTEX_ATTRIBUTE_INIT};attributes[0].format=WGPUVertexFormat_Float32x2;attributes[1].format=WGPUVertexFormat_Float32x2;attributes[1].offset=offsetof(MRVertex,u);attributes[1].shaderLocation=1;attributes[2].format=WGPUVertexFormat_Unorm8x4;attributes[2].offset=offsetof(MRVertex,r);attributes[2].shaderLocation=2;
-    WGPUVertexBufferLayout vl=WGPU_VERTEX_BUFFER_LAYOUT_INIT;vl.arrayStride=sizeof(MRVertex);vl.stepMode=WGPUVertexStepMode_Vertex;vl.attributeCount=3;vl.attributes=attributes;
+    WGPUVertexAttribute attributes[4]={WGPU_VERTEX_ATTRIBUTE_INIT,WGPU_VERTEX_ATTRIBUTE_INIT,WGPU_VERTEX_ATTRIBUTE_INIT,WGPU_VERTEX_ATTRIBUTE_INIT};attributes[0].format=WGPUVertexFormat_Float32x2;attributes[1].format=WGPUVertexFormat_Float32x2;attributes[1].offset=offsetof(MRVertex,u);attributes[1].shaderLocation=1;attributes[2].format=WGPUVertexFormat_Unorm8x4;attributes[2].offset=offsetof(MRVertex,r);attributes[2].shaderLocation=2;attributes[3].format=WGPUVertexFormat_Float32;attributes[3].offset=offsetof(MRVertex,z);attributes[3].shaderLocation=3;
+    WGPUVertexBufferLayout vl=WGPU_VERTEX_BUFFER_LAYOUT_INIT;vl.arrayStride=sizeof(MRVertex);vl.stepMode=WGPUVertexStepMode_Vertex;vl.attributeCount=4;vl.attributes=attributes;
     WGPUBlendState blend=WGPU_BLEND_STATE_INIT;WGPUColorTargetState target=WGPU_COLOR_TARGET_STATE_INIT;target.format=mr.config.format;target.blend=&blend;WGPUFragmentState fragment=WGPU_FRAGMENT_STATE_INIT;fragment.module=fs;fragment.entryPoint=mr_string("fs");fragment.targetCount=1;fragment.targets=&target;
-    WGPURenderPipelineDescriptor pd=WGPU_RENDER_PIPELINE_DESCRIPTOR_INIT;pd.layout=layout;pd.vertex.module=vs;pd.vertex.entryPoint=mr_string("vs");pd.vertex.bufferCount=1;pd.vertex.buffers=&vl;pd.primitive.topology=WGPUPrimitiveTopology_TriangleList;pd.fragment=&fragment;
+    WGPUDepthStencilState depth=WGPU_DEPTH_STENCIL_STATE_INIT;depth.format=WGPUTextureFormat_Depth24Plus;depth.depthWriteEnabled=WGPUOptionalBool_True;depth.depthCompare=WGPUCompareFunction_LessEqual;
+    WGPURenderPipelineDescriptor pd=WGPU_RENDER_PIPELINE_DESCRIPTOR_INIT;pd.layout=layout;pd.vertex.module=vs;pd.vertex.entryPoint=mr_string("vs");pd.vertex.bufferCount=1;pd.vertex.buffers=&vl;pd.primitive.topology=WGPUPrimitiveTopology_TriangleList;pd.fragment=&fragment;pd.depthStencil=&depth;
     bool ok=true;for(int mode=0;mode<6;mode++){blend.color.operation=mode==BLEND_SUBTRACT_COLORS?WGPUBlendOperation_ReverseSubtract:WGPUBlendOperation_Add;blend.alpha.operation=WGPUBlendOperation_Add;blend.color.srcFactor=(mode==BLEND_ALPHA_PREMULTIPLY||mode==BLEND_ADD_COLORS||mode==BLEND_SUBTRACT_COLORS)?WGPUBlendFactor_One:mode==BLEND_MULTIPLIED?WGPUBlendFactor_Dst:WGPUBlendFactor_SrcAlpha;blend.color.dstFactor=mode==BLEND_ADDITIVE||mode==BLEND_ADD_COLORS||mode==BLEND_SUBTRACT_COLORS?WGPUBlendFactor_One:WGPUBlendFactor_OneMinusSrcAlpha;blend.alpha.srcFactor=WGPUBlendFactor_One;blend.alpha.dstFactor=mode==BLEND_ADDITIVE||mode==BLEND_ADD_COLORS||mode==BLEND_SUBTRACT_COLORS?WGPUBlendFactor_One:WGPUBlendFactor_OneMinusSrcAlpha;output[mode]=wgpuDeviceCreateRenderPipeline(mr.device,&pd);if(!output[mode])ok=false;}
     wgpuPipelineLayoutRelease(layout);wgpuShaderModuleRelease(vs);wgpuShaderModuleRelease(fs);return ok;
 }
 #endif
-Shader LoadShaderFromMemory(const char *vsCode,const char *fsCode){if(!mr.ready)return(Shader){0};if(!vsCode)vsCode=mr_default_vertex_wgsl;if(!fsCode)fsCode=mr_default_fragment_wgsl;MRShaderEntry*entry=NULL;for(int i=0;i<32;i++)if(!mr.shaders[i].id){entry=&mr.shaders[i];break;}if(!entry)return(Shader){0};unsigned int id=++mr.nextShader;
+static unsigned int mr_name_hash(const char *name){unsigned int hash=2166136261u;if(name)while(*name){hash^=(unsigned char)*name++;hash*=16777619u;}return hash?hash:1;}
+static bool mr_text_starts(const char *text,const char *prefix){while(*prefix)if(*text++!=*prefix++)return false;return true;}
+static void mr_shader_parse_locations(MRShaderEntry *entry,const char *code){
+    const char *tag="@raygpu_uniform";if(!code)return;
+    for(const char *p=code;*p;p++)if(*p=='@'&&mr_text_starts(p,tag)){
+        p+=15;while(*p==' '||*p=='\t')p++;char name[64];int n=0;while((*p=='_'||(*p>='a'&&*p<='z')||(*p>='A'&&*p<='Z')||(*p>='0'&&*p<='9'))&&n<63)name[n++]=*p++;name[n]=0;
+        while(*p==' '||*p=='\t')p++;int slot=0,hasDigit=false;while(*p>='0'&&*p<='9'){hasDigit=true;slot=slot*10+(*p++-'0');}
+        if(!n||!hasDigit||slot<0||slot>=32)continue;entry->explicitLocations=true;unsigned int hash=mr_name_hash(name);bool exists=false;for(int i=0;i<entry->locationCount;i++)if(entry->nameHashes[i]==hash){exists=true;break;}if(!exists&&entry->locationCount<32){entry->nameHashes[entry->locationCount]=hash;entry->nameSlots[entry->locationCount]=(unsigned char)slot;entry->locationCount++;}
+    }
+}
+Shader LoadShaderFromMemory(const char *vsCode,const char *fsCode){if(!mr.ready)return(Shader){0};if(!vsCode)vsCode=mr_default_vertex_wgsl;if(!fsCode)fsCode=mr_default_fragment_wgsl;MRShaderEntry*entry=NULL;for(int i=0;i<32;i++)if(!mr.shaders[i].id){entry=&mr.shaders[i];break;}if(!entry)return(Shader){0};memset(entry,0,sizeof *entry);mr_shader_parse_locations(entry,vsCode);mr_shader_parse_locations(entry,fsCode);unsigned int id=++mr.nextShader;
 #ifdef _WIN32
     if(!mr_make_shader_pipelines(vsCode,fsCode,entry->pipelines)){for(int i=0;i<6;i++)if(entry->pipelines[i])wgpuRenderPipelineRelease(entry->pipelines[i]);memset(entry,0,sizeof *entry);return(Shader){0};}
     WGPUBufferDescriptor bd=WGPU_BUFFER_DESCRIPTOR_INIT;bd.size=sizeof entry->uniforms;bd.usage=WGPUBufferUsage_Uniform|WGPUBufferUsage_CopyDst;entry->uniformBuffer=wgpuDeviceCreateBuffer(mr.device,&bd);
@@ -890,8 +1002,7 @@ void UnloadShader(Shader shader){MRShaderEntry*entry=mr_shader(shader.id);if(!en
     memset(entry,0,sizeof *entry);}
 void BeginShaderMode(Shader shader){mr.currentShader=IsShaderValid(shader)?shader.id:0;}
 void EndShaderMode(void){mr.currentShader=0;}
-static unsigned int mr_name_hash(const char *name){unsigned int hash=2166136261u;if(name)while(*name){hash^=(unsigned char)*name++;hash*=16777619u;}return hash?hash:1;}
-int GetShaderLocation(Shader shader,const char *name){MRShaderEntry*entry=mr_shader(shader.id);if(!entry||!name)return-1;unsigned int hash=mr_name_hash(name);for(int i=0;i<entry->locationCount;i++)if(entry->nameHashes[i]==hash)return i;if(entry->locationCount>=32)return-1;entry->nameHashes[entry->locationCount]=hash;return entry->locationCount++;}
+int GetShaderLocation(Shader shader,const char *name){MRShaderEntry*entry=mr_shader(shader.id);if(!entry||!name)return-1;unsigned int hash=mr_name_hash(name);for(int i=0;i<entry->locationCount;i++)if(entry->nameHashes[i]==hash)return entry->nameSlots[i];if(entry->explicitLocations||entry->locationCount>=32)return-1;int slot=entry->locationCount;entry->nameHashes[entry->locationCount]=hash;entry->nameSlots[entry->locationCount]=(unsigned char)slot;entry->locationCount++;return slot;}
 static int mr_uniform_components(int type){switch(type){case SHADER_UNIFORM_VEC2:case SHADER_UNIFORM_IVEC2:return 2;case SHADER_UNIFORM_VEC3:case SHADER_UNIFORM_IVEC3:return 3;case SHADER_UNIFORM_VEC4:case SHADER_UNIFORM_IVEC4:return 4;default:return 1;}}
 void SetShaderValueV(Shader shader,int location,const void*value,int type,int count){MRShaderEntry*entry=mr_shader(shader.id);if(!entry||!value||location<0||location>=32||count<=0)return;int itemBytes=mr_uniform_components(type)*4;if(count>4)count=4;memset(entry->uniforms[location],0,64);for(int i=0;i<count;i++)memcpy(entry->uniforms[location]+i*16,(const unsigned char*)value+i*itemBytes,(size_t)itemBytes);
 #ifdef _WIN32
@@ -945,19 +1056,20 @@ static bool mr_renderer(void) {
         "struct V { @builtin(position) position: vec4f, @location(0) uv: vec2f, @location(1) color: vec4f };\n"
         "@group(0) @binding(0) var smp: sampler;\n"
         "@group(0) @binding(1) var tex: texture_2d<f32>;\n"
-        "@vertex fn vs(@location(0) p: vec2f, @location(1) uv: vec2f, @location(2) c: vec4f) -> V {\n"
-        " var o: V; o.position=vec4f(p,0,1); o.uv=uv; o.color=c; return o; }\n"
+        "@vertex fn vs(@location(0) p: vec2f, @location(1) uv: vec2f, @location(2) c: vec4f, @location(3) z: f32) -> V {\n"
+        " var o: V; o.position=vec4f(p,z,1); o.uv=uv; o.color=c; return o; }\n"
         "@fragment fn fs(v: V) -> @location(0) vec4f { return textureSample(tex,smp,v.uv)*v.color; }\n";
     WGPUShaderSourceWGSL source=WGPU_SHADER_SOURCE_WGSL_INIT; source.code=mr_string(wgsl);
     WGPUShaderModuleDescriptor shaderDesc=WGPU_SHADER_MODULE_DESCRIPTOR_INIT; shaderDesc.nextInChain=&source.chain;
     WGPUShaderModule shader=wgpuDeviceCreateShaderModule(mr.device,&shaderDesc);
-    WGPUVertexAttribute attributes[3]={WGPU_VERTEX_ATTRIBUTE_INIT,WGPU_VERTEX_ATTRIBUTE_INIT,WGPU_VERTEX_ATTRIBUTE_INIT};
+    WGPUVertexAttribute attributes[4]={WGPU_VERTEX_ATTRIBUTE_INIT,WGPU_VERTEX_ATTRIBUTE_INIT,WGPU_VERTEX_ATTRIBUTE_INIT,WGPU_VERTEX_ATTRIBUTE_INIT};
     attributes[0].format=WGPUVertexFormat_Float32x2;
     attributes[1].format=WGPUVertexFormat_Float32x2; attributes[1].offset=offsetof(MRVertex,u); attributes[1].shaderLocation=1;
     attributes[2].format=WGPUVertexFormat_Unorm8x4; attributes[2].offset=offsetof(MRVertex,r); attributes[2].shaderLocation=2;
+    attributes[3].format=WGPUVertexFormat_Float32; attributes[3].offset=offsetof(MRVertex,z); attributes[3].shaderLocation=3;
     WGPUVertexBufferLayout vertexLayout=WGPU_VERTEX_BUFFER_LAYOUT_INIT;
     vertexLayout.arrayStride=sizeof(MRVertex); vertexLayout.stepMode=WGPUVertexStepMode_Vertex;
-    vertexLayout.attributeCount=3; vertexLayout.attributes=attributes;
+    vertexLayout.attributeCount=4; vertexLayout.attributes=attributes;
     WGPUBlendState blend=WGPU_BLEND_STATE_INIT;
     WGPUColorTargetState target=WGPU_COLOR_TARGET_STATE_INIT; target.format=mr.config.format; target.blend=&blend;
     WGPUFragmentState fragment=WGPU_FRAGMENT_STATE_INIT;
@@ -965,7 +1077,9 @@ static bool mr_renderer(void) {
     WGPURenderPipelineDescriptor pipeline=WGPU_RENDER_PIPELINE_DESCRIPTOR_INIT;
     pipeline.layout=pipelineLayout; pipeline.vertex.module=shader; pipeline.vertex.entryPoint=mr_string("vs");
     pipeline.vertex.bufferCount=1; pipeline.vertex.buffers=&vertexLayout;
-    pipeline.primitive.topology=WGPUPrimitiveTopology_TriangleList; pipeline.fragment=&fragment;
+    WGPUDepthStencilState depth=WGPU_DEPTH_STENCIL_STATE_INIT; depth.format=WGPUTextureFormat_Depth24Plus;
+    depth.depthWriteEnabled=WGPUOptionalBool_True; depth.depthCompare=WGPUCompareFunction_LessEqual;
+    pipeline.primitive.topology=WGPUPrimitiveTopology_TriangleList; pipeline.fragment=&fragment; pipeline.depthStencil=&depth;
     for (int mode=0;mode<6;mode++) {
         blend.color.operation=mode==BLEND_SUBTRACT_COLORS?WGPUBlendOperation_ReverseSubtract:WGPUBlendOperation_Add;
         blend.alpha.operation=WGPUBlendOperation_Add;
@@ -983,6 +1097,22 @@ static bool mr_renderer(void) {
     const unsigned char white[4]={255,255,255,255}; mr.white=LoadTextureRGBA(white,1,1).id;
     mr.shapesTexture=(Texture2D){mr.white,1,1,1,7}; mr.shapesSource=(Rectangle){0,0,1,1};
     return mr.pipelines[0] && mr.buffer && mr.white && !mr.error;
+}
+static bool mr_resize_depth(int width,int height) {
+    if(width<=0||height<=0)return false;
+    if(mr.depthView&&mr.depthWidth==width&&mr.depthHeight==height)return true;
+    if(mr.depthView)wgpuTextureViewRelease(mr.depthView);
+    if(mr.depthTexture)wgpuTextureRelease(mr.depthTexture);
+    mr.depthView=NULL;mr.depthTexture=NULL;mr.depthWidth=mr.depthHeight=0;
+    WGPUTextureDescriptor descriptor=WGPU_TEXTURE_DESCRIPTOR_INIT;
+    descriptor.size=(WGPUExtent3D){(uint32_t)width,(uint32_t)height,1};
+    descriptor.dimension=WGPUTextureDimension_2D;descriptor.format=WGPUTextureFormat_Depth24Plus;
+    descriptor.usage=WGPUTextureUsage_RenderAttachment;
+    mr.depthTexture=wgpuDeviceCreateTexture(mr.device,&descriptor);
+    if(!mr.depthTexture)return false;
+    mr.depthView=wgpuTextureCreateView(mr.depthTexture,NULL);
+    if(!mr.depthView){wgpuTextureRelease(mr.depthTexture);mr.depthTexture=NULL;return false;}
+    mr.depthWidth=width;mr.depthHeight=height;return true;
 }
 void InitWindow(int width,int height,const char *title) {
     if (mr.instance) { fprintf(stderr,"raygpu: only one window is supported\n"); return; }
@@ -14875,11 +15005,14 @@ RenderTexture2D LoadRenderTexture(int width,int height) {
     descriptor.format=mr.config.format; descriptor.usage=WGPUTextureUsage_TextureBinding|WGPUTextureUsage_RenderAttachment|WGPUTextureUsage_CopySrc;
     entry->texture=wgpuDeviceCreateTexture(mr.device,&descriptor); if (!entry->texture) return (RenderTexture2D){0};
     entry->view=wgpuTextureCreateView(entry->texture,NULL);
+    descriptor.format=WGPUTextureFormat_Depth24Plus;descriptor.usage=WGPUTextureUsage_RenderAttachment;
+    entry->depthTexture=wgpuDeviceCreateTexture(mr.device,&descriptor);
+    if(entry->depthTexture)entry->depthView=wgpuTextureCreateView(entry->depthTexture,NULL);
     WGPUBindGroupEntry bindings[2]={WGPU_BIND_GROUP_ENTRY_INIT,WGPU_BIND_GROUP_ENTRY_INIT};
     bindings[0].binding=0; bindings[0].sampler=mr.sampler; bindings[1].binding=1; bindings[1].textureView=entry->view;
     WGPUBindGroupDescriptor group=WGPU_BIND_GROUP_DESCRIPTOR_INIT; group.layout=mr.textureLayout; group.entryCount=2; group.entries=bindings;
     entry->group=wgpuDeviceCreateBindGroup(mr.device,&group);
-    if (!entry->view || !entry->group) { if(entry->group)wgpuBindGroupRelease(entry->group);if(entry->view)wgpuTextureViewRelease(entry->view);wgpuTextureRelease(entry->texture);memset(entry,0,sizeof *entry);return(RenderTexture2D){0}; }
+    if (!entry->view || !entry->group || !entry->depthView) { if(entry->group)wgpuBindGroupRelease(entry->group);if(entry->depthView)wgpuTextureViewRelease(entry->depthView);if(entry->depthTexture)wgpuTextureRelease(entry->depthTexture);if(entry->view)wgpuTextureViewRelease(entry->view);wgpuTextureRelease(entry->texture);memset(entry,0,sizeof *entry);return(RenderTexture2D){0}; }
 #else
     mr_web_render_texture(id,width,height);
 #endif
@@ -14959,6 +15092,360 @@ Matrix GetCameraMatrix2D(Camera2D camera) {
 }
 void BeginMode2D(Camera2D camera) { mr.camera2d=camera; mr.camera2dActive=true; }
 void EndMode2D(void) { mr.camera2dActive=false; }
+static Vector3 mr_v3_add(Vector3 a,Vector3 b){return(Vector3){a.x+b.x,a.y+b.y,a.z+b.z};}
+static Vector3 mr_v3_sub(Vector3 a,Vector3 b){return(Vector3){a.x-b.x,a.y-b.y,a.z-b.z};}
+static Vector3 mr_v3_scale(Vector3 a,float s){return(Vector3){a.x*s,a.y*s,a.z*s};}
+static float mr_v3_dot(Vector3 a,Vector3 b){return a.x*b.x+a.y*b.y+a.z*b.z;}
+static Vector3 mr_v3_cross(Vector3 a,Vector3 b){return(Vector3){a.y*b.z-a.z*b.y,a.z*b.x-a.x*b.z,a.x*b.y-a.y*b.x};}
+static float mr_v3_len(Vector3 a){return sqrtf(mr_v3_dot(a,a));}
+static Vector3 mr_v3_norm(Vector3 a){float n=mr_v3_len(a);return n>0?mr_v3_scale(a,1.0f/n):(Vector3){0};}
+static void mr_camera_basis(Camera3D camera,Vector3 *right,Vector3 *up,Vector3 *forward){
+    *forward=mr_v3_norm(mr_v3_sub(camera.target,camera.position));
+    *right=mr_v3_norm(mr_v3_cross(*forward,camera.up));
+    if(mr_v3_len(*right)<0.0001f)*right=(Vector3){1,0,0};
+    *up=mr_v3_norm(mr_v3_cross(*right,*forward));
+}
+typedef struct MRProjected3D { float x,y,z,viewZ; bool visible; } MRProjected3D;
+static MRProjected3D mr_project3d_ex(Vector3 point,Camera3D camera,int width,int height){
+    Vector3 right,up,forward;mr_camera_basis(camera,&right,&up,&forward);
+    Vector3 relative=mr_v3_sub(point,camera.position);
+    float x=mr_v3_dot(relative,right),y=mr_v3_dot(relative,up),z=mr_v3_dot(relative,forward);
+    float aspect=height>0?(float)width/(float)height:1.0f,n=0.01f,f=1000.0f,nx=0,ny=0,depth=1;
+    if(camera.projection==CAMERA_ORTHOGRAPHIC){float vertical=camera.fovy>0?camera.fovy:1;nx=2*x/(vertical*aspect);ny=2*y/vertical;depth=(z-n)/(f-n);}
+    else{float tangent=sinf(camera.fovy*MR_DEG2RAD*0.5f)/cosf(camera.fovy*MR_DEG2RAD*0.5f);if(tangent<=0)tangent=0.0001f;nx=x/(z*tangent*aspect);ny=y/(z*tangent);depth=f/(f-n)-(n*f)/((f-n)*z);}
+    return(MRProjected3D){nx,ny,depth,z,z>n};
+}
+Vector2 GetWorldToScreenEx(Vector3 point,Camera camera,int width,int height){MRProjected3D p=mr_project3d_ex(point,camera,width,height);return(Vector2){(p.x+1)*0.5f*width,(1-p.y)*0.5f*height};}
+Vector2 GetWorldToScreen(Vector3 point,Camera camera){return GetWorldToScreenEx(point,camera,mr.width,mr.height);}
+Matrix GetCameraMatrix(Camera camera){
+    Vector3 r,u,f;mr_camera_basis(camera,&r,&u,&f);Matrix m={0};
+    m.m0=r.x;m.m4=r.y;m.m8=r.z;m.m12=-mr_v3_dot(r,camera.position);
+    m.m1=u.x;m.m5=u.y;m.m9=u.z;m.m13=-mr_v3_dot(u,camera.position);
+    m.m2=-f.x;m.m6=-f.y;m.m10=-f.z;m.m14=mr_v3_dot(f,camera.position);m.m15=1;return m;
+}
+Ray GetScreenToWorldRayEx(Vector2 position,Camera camera,int width,int height){
+    Vector3 r,u,f;mr_camera_basis(camera,&r,&u,&f);float nx=2*position.x/width-1,ny=1-2*position.y/height;
+    if(camera.projection==CAMERA_ORTHOGRAPHIC){float vertical=camera.fovy>0?camera.fovy:1;Vector3 origin=mr_v3_add(camera.position,mr_v3_add(mr_v3_scale(r,nx*vertical*width/height*0.5f),mr_v3_scale(u,ny*vertical*0.5f)));return(Ray){origin,f};}
+    float tangent=sinf(camera.fovy*MR_DEG2RAD*0.5f)/cosf(camera.fovy*MR_DEG2RAD*0.5f);
+    Vector3 direction=mr_v3_norm(mr_v3_add(f,mr_v3_add(mr_v3_scale(r,nx*tangent*width/height),mr_v3_scale(u,ny*tangent))));return(Ray){camera.position,direction};
+}
+Ray GetScreenToWorldRay(Vector2 position,Camera camera){return GetScreenToWorldRayEx(position,camera,mr.width,mr.height);}
+void BeginMode3D(Camera3D camera){mr.camera3d=camera;mr.camera3dActive=true;mr.camera2dActive=false;}
+void EndMode3D(void){mr.camera3dActive=false;}
+static bool mr_batch_room(unsigned int texture){
+    if(!mr.drawing||mr.vertexCount+3>MR_MAX_VERTICES)return false;
+    unsigned int sx=mr.scissorActive?(unsigned int)(mr.scissor.x<0?0:mr.scissor.x):0,sy=mr.scissorActive?(unsigned int)(mr.scissor.y<0?0:mr.scissor.y):0;
+    unsigned int sw=mr.scissorActive?(unsigned int)(mr.scissor.width<0?0:mr.scissor.width):(unsigned int)mr.targetWidth,sh=mr.scissorActive?(unsigned int)(mr.scissor.height<0?0:mr.scissor.height):(unsigned int)mr.targetHeight;
+    MRBatch *last=mr.batchCount?&mr.batches[mr.batchCount-1]:NULL;
+    if(!last||last->texture!=texture||last->blend!=(unsigned int)mr.blendMode||last->shader!=mr.currentShader||last->x!=sx||last->y!=sy||last->width!=sw||last->height!=sh)mr.batches[mr.batchCount++]=(MRBatch){mr.vertexCount,0,texture,(unsigned int)mr.blendMode,mr.currentShader,sx,sy,sw,sh};
+    mr.batches[mr.batchCount-1].count+=3;return true;
+}
+static void mr_projected_triangle_uv(MRProjected3D a,MRProjected3D b,MRProjected3D c,
+    Vector2 uvA,Vector2 uvB,Vector2 uvC,Color colorA,Color colorB,Color colorC,unsigned int texture){
+    if(!a.visible||!b.visible||!c.visible||!mr_batch_room(texture))return;
+    MRProjected3D p[3]={a,b,c};Vector2 uv[3]={uvA,uvB,uvC};Color colors[3]={colorA,colorB,colorC};
+    for(int i=0;i<3;i++)mr.vertices[mr.vertexCount++]=(MRVertex){p[i].x,p[i].y,uv[i].x,uv[i].y,p[i].z,colors[i].r,colors[i].g,colors[i].b,colors[i].a};
+}
+static void mr_projected_triangle(MRProjected3D a,MRProjected3D b,MRProjected3D c,Color color){
+    float u=(mr.shapesSource.x+mr.shapesSource.width*0.5f)/mr.shapesTexture.width,v=(mr.shapesSource.y+mr.shapesSource.height*0.5f)/mr.shapesTexture.height;Vector2 uv={u,v};
+    mr_projected_triangle_uv(a,b,c,uv,uv,uv,color,color,color,mr.shapesTexture.id);
+}
+static void mr_triangle3d(Vector3 a,Vector3 b,Vector3 c,Color color){if(!mr.camera3dActive)return;mr_projected_triangle(mr_project3d_ex(a,mr.camera3d,mr.targetWidth,mr.targetHeight),mr_project3d_ex(b,mr.camera3d,mr.targetWidth,mr.targetHeight),mr_project3d_ex(c,mr.camera3d,mr.targetWidth,mr.targetHeight),color);}
+void DrawTriangle3D(Vector3 a,Vector3 b,Vector3 c,Color color){mr_triangle3d(a,b,c,color);}
+void DrawTriangleStrip3D(const Vector3 *points,int count,Color color){if(!points)return;for(int i=2;i<count;i++)if(i&1)mr_triangle3d(points[i-1],points[i-2],points[i],color);else mr_triangle3d(points[i-2],points[i-1],points[i],color);}
+void DrawLine3D(Vector3 a,Vector3 b,Color color){
+    if(!mr.camera3dActive)return;MRProjected3D p=mr_project3d_ex(a,mr.camera3d,mr.targetWidth,mr.targetHeight),q=mr_project3d_ex(b,mr.camera3d,mr.targetWidth,mr.targetHeight);if(!p.visible||!q.visible)return;
+    float dx=(q.x-p.x)*mr.targetWidth*0.5f,dy=(q.y-p.y)*mr.targetHeight*0.5f,n=sqrtf(dx*dx+dy*dy);if(n<=0)return;
+    float ox=-dy/n/mr.targetWidth*2,oy=dx/n/mr.targetHeight*2;
+    /* Keep endpoint depth instead of flattening the whole line to its average.
+     * Perspective grid lines can span a large depth range; averaging made the
+     * near half incorrectly cover solid geometry. */
+    MRProjected3D a1={p.x+ox,p.y+oy,p.z,p.viewZ,true},a2={q.x+ox,q.y+oy,q.z,q.viewZ,true};
+    MRProjected3D b1={q.x-ox,q.y-oy,q.z,q.viewZ,true},b2={p.x-ox,p.y-oy,p.z,p.viewZ,true};
+    mr_projected_triangle(a1,a2,b1,color);mr_projected_triangle(a1,b1,b2,color);
+}
+void DrawPoint3D(Vector3 p,Color color){Vector3 r,u,f;mr_camera_basis(mr.camera3d,&r,&u,&f);DrawLine3D(mr_v3_sub(p,mr_v3_scale(u,0.025f)),mr_v3_add(p,mr_v3_scale(u,0.025f)),color);}
+static Vector3 mr_rotate_axis(Vector3 v,Vector3 axis,float angle){axis=mr_v3_norm(axis);float c=cosf(angle),s=sinf(angle);return mr_v3_add(mr_v3_add(mr_v3_scale(v,c),mr_v3_scale(mr_v3_cross(axis,v),s)),mr_v3_scale(axis,mr_v3_dot(axis,v)*(1-c)));}
+void DrawCircle3D(Vector3 center,float radius,Vector3 axis,float angle,Color color){Vector3 previous=mr_v3_add(center,mr_rotate_axis((Vector3){radius,0,0},axis,angle*MR_DEG2RAD));for(int i=1;i<=36;i++){float a=2*MR_PI*i/36;Vector3 local={cosf(a)*radius,sinf(a)*radius,0};Vector3 point=mr_v3_add(center,mr_rotate_axis(local,axis,angle*MR_DEG2RAD));DrawLine3D(previous,point,color);previous=point;}}
+void DrawCubeV(Vector3 p,Vector3 s,Color color){
+    float x=s.x/2,y=s.y/2,z=s.z/2;Vector3 v[8]={{p.x-x,p.y-y,p.z-z},{p.x+x,p.y-y,p.z-z},{p.x+x,p.y+y,p.z-z},{p.x-x,p.y+y,p.z-z},{p.x-x,p.y-y,p.z+z},{p.x+x,p.y-y,p.z+z},{p.x+x,p.y+y,p.z+z},{p.x-x,p.y+y,p.z+z}};
+    int f[12][3]={{0,2,1},{0,3,2},{4,5,6},{4,6,7},{0,1,5},{0,5,4},{3,7,6},{3,6,2},{0,4,7},{0,7,3},{1,2,6},{1,6,5}};for(int i=0;i<12;i++)mr_triangle3d(v[f[i][0]],v[f[i][1]],v[f[i][2]],color);
+}
+void DrawCube(Vector3 p,float w,float h,float l,Color c){DrawCubeV(p,(Vector3){w,h,l},c);}
+void DrawCubeWiresV(Vector3 p,Vector3 s,Color color){float x=s.x/2,y=s.y/2,z=s.z/2;Vector3 v[8]={{p.x-x,p.y-y,p.z-z},{p.x+x,p.y-y,p.z-z},{p.x+x,p.y+y,p.z-z},{p.x-x,p.y+y,p.z-z},{p.x-x,p.y-y,p.z+z},{p.x+x,p.y-y,p.z+z},{p.x+x,p.y+y,p.z+z},{p.x-x,p.y+y,p.z+z}};int e[12][2]={{0,1},{1,2},{2,3},{3,0},{4,5},{5,6},{6,7},{7,4},{0,4},{1,5},{2,6},{3,7}};for(int i=0;i<12;i++)DrawLine3D(v[e[i][0]],v[e[i][1]],color);}
+void DrawCubeWires(Vector3 p,float w,float h,float l,Color c){DrawCubeWiresV(p,(Vector3){w,h,l},c);}
+void DrawSphereEx(Vector3 center,float radius,int rings,int slices,Color color){if(rings<2)rings=2;if(slices<3)slices=3;for(int y=0;y<rings;y++){float a0=-MR_PI/2+MR_PI*y/rings,a1=-MR_PI/2+MR_PI*(y+1)/rings;for(int x=0;x<slices;x++){float b0=2*MR_PI*x/slices,b1=2*MR_PI*(x+1)/slices;Vector3 p0={center.x+cosf(a0)*cosf(b0)*radius,center.y+sinf(a0)*radius,center.z+cosf(a0)*sinf(b0)*radius},p1={center.x+cosf(a0)*cosf(b1)*radius,center.y+sinf(a0)*radius,center.z+cosf(a0)*sinf(b1)*radius},p2={center.x+cosf(a1)*cosf(b1)*radius,center.y+sinf(a1)*radius,center.z+cosf(a1)*sinf(b1)*radius},p3={center.x+cosf(a1)*cosf(b0)*radius,center.y+sinf(a1)*radius,center.z+cosf(a1)*sinf(b0)*radius};mr_triangle3d(p0,p1,p2,color);mr_triangle3d(p0,p2,p3,color);}}}
+void DrawSphere(Vector3 c,float r,Color color){DrawSphereEx(c,r,16,24,color);}
+void DrawSphereWires(Vector3 center,float radius,int rings,int slices,Color color){if(rings<2)rings=2;if(slices<3)slices=3;for(int y=1;y<rings;y++){float a=-MR_PI/2+MR_PI*y/rings;Vector3 previous={center.x+cosf(a)*radius,center.y+sinf(a)*radius,center.z};for(int x=1;x<=slices;x++){float b=2*MR_PI*x/slices;Vector3 p={center.x+cosf(a)*cosf(b)*radius,center.y+sinf(a)*radius,center.z+cosf(a)*sinf(b)*radius};DrawLine3D(previous,p,color);previous=p;}}for(int x=0;x<slices;x++){float b=2*MR_PI*x/slices;Vector3 previous={center.x,center.y-radius,center.z};for(int y=1;y<=rings;y++){float a=-MR_PI/2+MR_PI*y/rings;Vector3 p={center.x+cosf(a)*cosf(b)*radius,center.y+sinf(a)*radius,center.z+cosf(a)*sinf(b)*radius};DrawLine3D(previous,p,color);previous=p;}}}
+static void mr_cylinder_basis(Vector3 a,Vector3 b,Vector3 *u,Vector3 *v){Vector3 axis=mr_v3_norm(mr_v3_sub(b,a)),helper=(axis.y>-0.9f&&axis.y<0.9f)?(Vector3){0,1,0}:(Vector3){1,0,0};*u=mr_v3_norm(mr_v3_cross(axis,helper));*v=mr_v3_cross(axis,*u);}
+void DrawCylinderEx(Vector3 a,Vector3 b,float ra,float rb,int sides,Color color){if(sides<3)sides=3;Vector3 u,v;mr_cylinder_basis(a,b,&u,&v);for(int i=0;i<sides;i++){float x=2*MR_PI*i/sides,y=2*MR_PI*(i+1)/sides;Vector3 a0=mr_v3_add(a,mr_v3_add(mr_v3_scale(u,cosf(x)*ra),mr_v3_scale(v,sinf(x)*ra))),a1=mr_v3_add(a,mr_v3_add(mr_v3_scale(u,cosf(y)*ra),mr_v3_scale(v,sinf(y)*ra))),b0=mr_v3_add(b,mr_v3_add(mr_v3_scale(u,cosf(x)*rb),mr_v3_scale(v,sinf(x)*rb))),b1=mr_v3_add(b,mr_v3_add(mr_v3_scale(u,cosf(y)*rb),mr_v3_scale(v,sinf(y)*rb)));mr_triangle3d(a0,a1,b1,color);mr_triangle3d(a0,b1,b0,color);mr_triangle3d(a,a1,a0,color);mr_triangle3d(b,b0,b1,color);}}
+void DrawCylinder(Vector3 p,float top,float bottom,float height,int slices,Color color){DrawCylinderEx(p,(Vector3){p.x,p.y+height,p.z},bottom,top,slices,color);}
+void DrawCylinderWiresEx(Vector3 a,Vector3 b,float ra,float rb,int sides,Color color){if(sides<3)sides=3;Vector3 u,v;mr_cylinder_basis(a,b,&u,&v);for(int i=0;i<sides;i++){float x=2*MR_PI*i/sides,y=2*MR_PI*(i+1)/sides;Vector3 a0=mr_v3_add(a,mr_v3_add(mr_v3_scale(u,cosf(x)*ra),mr_v3_scale(v,sinf(x)*ra))),a1=mr_v3_add(a,mr_v3_add(mr_v3_scale(u,cosf(y)*ra),mr_v3_scale(v,sinf(y)*ra))),b0=mr_v3_add(b,mr_v3_add(mr_v3_scale(u,cosf(x)*rb),mr_v3_scale(v,sinf(x)*rb))),b1=mr_v3_add(b,mr_v3_add(mr_v3_scale(u,cosf(y)*rb),mr_v3_scale(v,sinf(y)*rb)));DrawLine3D(a0,a1,color);DrawLine3D(b0,b1,color);DrawLine3D(a0,b0,color);}}
+void DrawCylinderWires(Vector3 p,float top,float bottom,float height,int slices,Color color){DrawCylinderWiresEx(p,(Vector3){p.x,p.y+height,p.z},bottom,top,slices,color);}
+void DrawCapsule(Vector3 a,Vector3 b,float radius,int slices,int rings,Color color){DrawCylinderEx(a,b,radius,radius,slices,color);DrawSphereEx(a,radius,rings,slices,color);DrawSphereEx(b,radius,rings,slices,color);}
+void DrawCapsuleWires(Vector3 a,Vector3 b,float radius,int slices,int rings,Color color){DrawCylinderWiresEx(a,b,radius,radius,slices,color);DrawSphereWires(a,radius,rings,slices,color);DrawSphereWires(b,radius,rings,slices,color);}
+void DrawPlane(Vector3 p,Vector2 s,Color c){Vector3 a={p.x-s.x/2,p.y,p.z-s.y/2},b={p.x+s.x/2,p.y,p.z-s.y/2},d={p.x-s.x/2,p.y,p.z+s.y/2},e={p.x+s.x/2,p.y,p.z+s.y/2};mr_triangle3d(a,e,b,c);mr_triangle3d(a,d,e,c);}
+void DrawRay(Ray ray,Color color){DrawLine3D(ray.position,mr_v3_add(ray.position,mr_v3_scale(ray.direction,10000)),color);}
+void DrawGrid(int slices,float spacing){int half=slices/2;for(int i=-half;i<=half;i++){Color c=i==0?(Color){130,130,130,255}:(Color){80,80,80,255};DrawLine3D((Vector3){i*spacing,0,-half*spacing},(Vector3){i*spacing,0,half*spacing},c);DrawLine3D((Vector3){-half*spacing,0,i*spacing},(Vector3){half*spacing,0,i*spacing},c);}}
+bool CheckCollisionSpheres(Vector3 a,float ar,Vector3 b,float br){Vector3 d=mr_v3_sub(a,b);float r=ar+br;return mr_v3_dot(d,d)<=r*r;}
+bool CheckCollisionBoxes(BoundingBox a,BoundingBox b){return a.min.x<=b.max.x&&a.max.x>=b.min.x&&a.min.y<=b.max.y&&a.max.y>=b.min.y&&a.min.z<=b.max.z&&a.max.z>=b.min.z;}
+bool CheckCollisionBoxSphere(BoundingBox b,Vector3 c,float r){float x=c.x<b.min.x?b.min.x:c.x>b.max.x?b.max.x:c.x,y=c.y<b.min.y?b.min.y:c.y>b.max.y?b.max.y:c.y,z=c.z<b.min.z?b.min.z:c.z>b.max.z?b.max.z:c.z;Vector3 d={c.x-x,c.y-y,c.z-z};return mr_v3_dot(d,d)<=r*r;}
+RayCollision GetRayCollisionSphere(Ray ray,Vector3 center,float radius){RayCollision hit={0};Vector3 oc=mr_v3_sub(ray.position,center);float a=mr_v3_dot(ray.direction,ray.direction),b=2*mr_v3_dot(oc,ray.direction),c=mr_v3_dot(oc,oc)-radius*radius,d=b*b-4*a*c;if(d<0||a==0)return hit;float t=(-b-sqrtf(d))/(2*a);if(t<0)t=(-b+sqrtf(d))/(2*a);if(t<0)return hit;hit.hit=true;hit.distance=t;hit.point=mr_v3_add(ray.position,mr_v3_scale(ray.direction,t));hit.normal=mr_v3_norm(mr_v3_sub(hit.point,center));return hit;}
+RayCollision GetRayCollisionBox(Ray ray,BoundingBox box){RayCollision hit={0};float tmin=0,tmax=1e30f;Vector3 normal={0};float o[3]={ray.position.x,ray.position.y,ray.position.z},d[3]={ray.direction.x,ray.direction.y,ray.direction.z},mn[3]={box.min.x,box.min.y,box.min.z},mx[3]={box.max.x,box.max.y,box.max.z};for(int i=0;i<3;i++){if(d[i]>-0.000001f&&d[i]<0.000001f){if(o[i]<mn[i]||o[i]>mx[i])return hit;continue;}float a=(mn[i]-o[i])/d[i],b=(mx[i]-o[i])/d[i],sign=-1;if(a>b){float q=a;a=b;b=q;sign=1;}if(a>tmin){tmin=a;normal=(Vector3){0};if(i==0)normal.x=sign;if(i==1)normal.y=sign;if(i==2)normal.z=sign;}if(b<tmax)tmax=b;if(tmin>tmax)return hit;}if(tmax<0)return hit;hit.hit=true;hit.distance=tmin>=0?tmin:tmax;hit.point=mr_v3_add(ray.position,mr_v3_scale(ray.direction,hit.distance));hit.normal=normal;return hit;}
+RayCollision GetRayCollisionTriangle(Ray ray,Vector3 a,Vector3 b,Vector3 c){RayCollision hit={0};Vector3 e1=mr_v3_sub(b,a),e2=mr_v3_sub(c,a),p=mr_v3_cross(ray.direction,e2);float det=mr_v3_dot(e1,p);if(det>-0.000001f&&det<0.000001f)return hit;float inv=1/det;Vector3 t=mr_v3_sub(ray.position,a);float u=mr_v3_dot(t,p)*inv;if(u<0||u>1)return hit;Vector3 q=mr_v3_cross(t,e1);float v=mr_v3_dot(ray.direction,q)*inv;if(v<0||u+v>1)return hit;float distance=mr_v3_dot(e2,q)*inv;if(distance<0)return hit;hit.hit=true;hit.distance=distance;hit.point=mr_v3_add(ray.position,mr_v3_scale(ray.direction,distance));hit.normal=mr_v3_norm(mr_v3_cross(e1,e2));return hit;}
+RayCollision GetRayCollisionQuad(Ray ray,Vector3 a,Vector3 b,Vector3 c,Vector3 d){RayCollision first=GetRayCollisionTriangle(ray,a,b,c),second=GetRayCollisionTriangle(ray,a,c,d);if(!first.hit)return second;if(!second.hit)return first;return first.distance<=second.distance?first:second;}
+static Matrix mr_matrix_identity(void){Matrix m={0};m.m0=m.m5=m.m10=m.m15=1;return m;}
+static Vector3 mr_v3_transform(Vector3 v,Matrix m){return(Vector3){m.m0*v.x+m.m4*v.y+m.m8*v.z+m.m12,m.m1*v.x+m.m5*v.y+m.m9*v.z+m.m13,m.m2*v.x+m.m6*v.y+m.m10*v.z+m.m14};}
+static Matrix mr_matrix_multiply(Matrix a,Matrix b){
+    const float *x=(const float*)&a,*y=(const float*)&b;Matrix result={0};float *r=(float*)&result;
+    for(int row=0;row<4;row++)for(int col=0;col<4;col++)for(int k=0;k<4;k++)r[row*4+col]+=x[row*4+k]*y[k*4+col];return result;
+}
+static Matrix mr_model_matrix(Vector3 position,Vector3 axis,float angle,Vector3 scale){
+    axis=mr_v3_norm(axis);if(mr_v3_len(axis)<0.0001f)axis=(Vector3){0,1,0};float c=cosf(angle*MR_DEG2RAD),s=sinf(angle*MR_DEG2RAD),t=1-c,x=axis.x,y=axis.y,z=axis.z;Matrix m=mr_matrix_identity();
+    m.m0=(t*x*x+c)*scale.x;m.m4=(t*x*y-s*z)*scale.y;m.m8=(t*x*z+s*y)*scale.z;
+    m.m1=(t*x*y+s*z)*scale.x;m.m5=(t*y*y+c)*scale.y;m.m9=(t*y*z-s*x)*scale.z;
+    m.m2=(t*x*z-s*y)*scale.x;m.m6=(t*y*z+s*x)*scale.y;m.m10=(t*z*z+c)*scale.z;
+    m.m12=position.x;m.m13=position.y;m.m14=position.z;return m;
+}
+static unsigned int mr_next_mesh_id=0;
+void UploadMesh(Mesh *mesh,bool dynamic){(void)dynamic;if(!mesh||!mesh->vertices||mesh->vertexCount<=0)return;if(!mesh->vaoId)mesh->vaoId=++mr_next_mesh_id;if(!mesh->vboId)mesh->vboId=MemAlloc(7*sizeof(unsigned int));if(mesh->vboId)for(int i=0;i<7;i++)mesh->vboId[i]=mesh->vaoId*8u+(unsigned int)i;}
+void UpdateMeshBuffer(Mesh mesh,int index,const void *data,int dataSize,int offset){if(!data||dataSize<=0||offset<0)return;void *target=NULL;int capacity=0;if(index==0){target=mesh.vertices;capacity=mesh.vertexCount*3*(int)sizeof(float);}else if(index==1){target=mesh.texcoords;capacity=mesh.vertexCount*2*(int)sizeof(float);}else if(index==2){target=mesh.normals;capacity=mesh.vertexCount*3*(int)sizeof(float);}else if(index==3){target=mesh.colors;capacity=mesh.vertexCount*4;}else if(index==4){target=mesh.tangents;capacity=mesh.vertexCount*4*(int)sizeof(float);}else if(index==5){target=mesh.texcoords2;capacity=mesh.vertexCount*2*(int)sizeof(float);}else if(index==6){target=mesh.indices;capacity=mesh.triangleCount*3*(int)sizeof(unsigned short);}if(target&&offset+dataSize<=capacity)memcpy((unsigned char*)target+offset,data,(size_t)dataSize);}
+void UnloadMesh(Mesh mesh){MemFree(mesh.vertices);MemFree(mesh.texcoords);MemFree(mesh.texcoords2);MemFree(mesh.normals);MemFree(mesh.tangents);MemFree(mesh.colors);MemFree(mesh.indices);MemFree(mesh.animVertices);MemFree(mesh.animNormals);MemFree(mesh.boneIds);MemFree(mesh.boneWeights);MemFree(mesh.boneMatrices);MemFree(mesh.vboId);}
+Material LoadMaterialDefault(void){Material material={0};material.maps=MemAlloc(11*sizeof(MaterialMap));if(material.maps){memset(material.maps,0,11*sizeof(MaterialMap));material.maps[MATERIAL_MAP_ALBEDO].texture=(Texture2D){mr.white,1,1,1,7};material.maps[MATERIAL_MAP_ALBEDO].color=WHITE;material.maps[MATERIAL_MAP_METALNESS].color=WHITE;material.maps[MATERIAL_MAP_ROUGHNESS].value=1;}return material;}
+bool IsMaterialValid(Material material){return material.maps!=NULL;}
+void UnloadMaterial(Material material){MemFree(material.maps);}
+void SetMaterialTexture(Material *material,int mapType,Texture2D texture){if(material&&material->maps&&mapType>=0&&mapType<11)material->maps[mapType].texture=texture;}
+BoundingBox GetMeshBoundingBox(Mesh mesh){BoundingBox box={0};if(!mesh.vertices||mesh.vertexCount<=0)return box;box.min=box.max=(Vector3){mesh.vertices[0],mesh.vertices[1],mesh.vertices[2]};for(int i=1;i<mesh.vertexCount;i++){Vector3 p={mesh.vertices[i*3],mesh.vertices[i*3+1],mesh.vertices[i*3+2]};if(p.x<box.min.x)box.min.x=p.x;if(p.y<box.min.y)box.min.y=p.y;if(p.z<box.min.z)box.min.z=p.z;if(p.x>box.max.x)box.max.x=p.x;if(p.y>box.max.y)box.max.y=p.y;if(p.z>box.max.z)box.max.z=p.z;}return box;}
+void DrawMesh(Mesh mesh,Material material,Matrix transform){
+    if(!mr.camera3dActive||!mesh.vertices||mesh.triangleCount<=0)return;Texture2D texture={mr.white,1,1,1,7};Color base=WHITE;if(material.maps){if(IsTextureValid(material.maps[0].texture))texture=material.maps[0].texture;base=material.maps[0].color;}
+    float *vertices=mesh.animVertices?mesh.animVertices:mesh.vertices;for(int triangle=0;triangle<mesh.triangleCount;triangle++){int ids[3];for(int j=0;j<3;j++)ids[j]=mesh.indices?mesh.indices[triangle*3+j]:triangle*3+j;if(ids[0]>=mesh.vertexCount||ids[1]>=mesh.vertexCount||ids[2]>=mesh.vertexCount)continue;MRProjected3D p[3];Vector2 uv[3];Color color[3];for(int j=0;j<3;j++){int id=ids[j];Vector3 v={vertices[id*3],vertices[id*3+1],vertices[id*3+2]};p[j]=mr_project3d_ex(mr_v3_transform(v,transform),mr.camera3d,mr.targetWidth,mr.targetHeight);uv[j]=mesh.texcoords?(Vector2){mesh.texcoords[id*2],mesh.texcoords[id*2+1]}:(Vector2){0.5f,0.5f};Color vertex=mesh.colors?(Color){mesh.colors[id*4],mesh.colors[id*4+1],mesh.colors[id*4+2],mesh.colors[id*4+3]}:WHITE;color[j]=ColorTint(vertex,base);}mr_projected_triangle_uv(p[0],p[1],p[2],uv[0],uv[1],uv[2],color[0],color[1],color[2],texture.id);}
+}
+void DrawMeshInstanced(Mesh mesh,Material material,const Matrix *transforms,int instances){if(!transforms)return;for(int i=0;i<instances;i++)DrawMesh(mesh,material,transforms[i]);}
+Model LoadModelFromMesh(Mesh mesh){Model model={0};model.transform=mr_matrix_identity();model.meshCount=1;model.materialCount=1;model.meshes=MemAlloc(sizeof(Mesh));model.materials=MemAlloc(sizeof(Material));model.meshMaterial=MemAlloc(sizeof(int));if(!model.meshes||!model.materials||!model.meshMaterial){MemFree(model.meshes);MemFree(model.materials);MemFree(model.meshMaterial);return(Model){0};}model.meshes[0]=mesh;model.materials[0]=LoadMaterialDefault();model.meshMaterial[0]=0;return model;}
+bool IsModelValid(Model model){if(model.meshCount<=0||!model.meshes||model.materialCount<=0||!model.materials||!model.meshMaterial)return false;for(int i=0;i<model.meshCount;i++)if(model.meshes[i].vertices&&model.meshes[i].vertexCount>0&&model.meshes[i].triangleCount>0)return true;return false;}
+void SetModelMeshMaterial(Model *model,int meshId,int materialId){if(model&&model->meshMaterial&&meshId>=0&&meshId<model->meshCount&&materialId>=0&&materialId<model->materialCount)model->meshMaterial[meshId]=materialId;}
+void UnloadModel(Model model){unsigned int unloaded[128]={0};int unloadedCount=0;if(model.materials)for(int i=0;i<model.materialCount;i++)if(model.materials[i].maps){for(int map=0;map<11;map++){Texture2D texture=model.materials[i].maps[map].texture;bool seen=texture.id==0||texture.id==mr.white;for(int j=0;j<unloadedCount;j++)if(unloaded[j]==texture.id)seen=true;if(!seen&&unloadedCount<128){unloaded[unloadedCount++]=texture.id;UnloadTexture(texture);}}UnloadMaterial(model.materials[i]);}if(model.meshes)for(int i=0;i<model.meshCount;i++)UnloadMesh(model.meshes[i]);MemFree(model.meshes);MemFree(model.materials);MemFree(model.meshMaterial);MemFree(model.bones);MemFree(model.bindPose);}
+static void mr_draw_model_internal(Model model,Matrix transform,Color tint,int style){if(!IsModelValid(model))return;Matrix combined=mr_matrix_multiply(transform,model.transform);for(int i=0;i<model.meshCount;i++){int materialId=model.meshMaterial[i];if(materialId<0||materialId>=model.materialCount)materialId=0;Material material=model.materials[materialId];Color old=material.maps?material.maps[0].color:WHITE;if(material.maps)material.maps[0].color=ColorTint(old,tint);if(style==0)DrawMesh(model.meshes[i],material,combined);else{Mesh mesh=model.meshes[i];float *vertices=mesh.animVertices?mesh.animVertices:mesh.vertices;for(int t=0;t<mesh.triangleCount;t++){int a=mesh.indices?mesh.indices[t*3]:t*3,b=mesh.indices?mesh.indices[t*3+1]:t*3+1,c=mesh.indices?mesh.indices[t*3+2]:t*3+2;if(a>=mesh.vertexCount||b>=mesh.vertexCount||c>=mesh.vertexCount)continue;Vector3 p[3];int ids[3]={a,b,c};for(int j=0;j<3;j++)p[j]=mr_v3_transform((Vector3){vertices[ids[j]*3],vertices[ids[j]*3+1],vertices[ids[j]*3+2]},combined);if(style==1){DrawLine3D(p[0],p[1],tint);DrawLine3D(p[1],p[2],tint);DrawLine3D(p[2],p[0],tint);}else{DrawPoint3D(p[0],tint);DrawPoint3D(p[1],tint);DrawPoint3D(p[2],tint);}}}if(material.maps)material.maps[0].color=old;}}
+void DrawModelEx(Model model,Vector3 position,Vector3 axis,float angle,Vector3 scale,Color tint){mr_draw_model_internal(model,mr_model_matrix(position,axis,angle,scale),tint,0);}
+void DrawModel(Model model,Vector3 position,float scale,Color tint){DrawModelEx(model,position,(Vector3){0,1,0},0,(Vector3){scale,scale,scale},tint);}
+void DrawModelWiresEx(Model model,Vector3 position,Vector3 axis,float angle,Vector3 scale,Color tint){mr_draw_model_internal(model,mr_model_matrix(position,axis,angle,scale),tint,1);}
+void DrawModelWires(Model model,Vector3 position,float scale,Color tint){DrawModelWiresEx(model,position,(Vector3){0,1,0},0,(Vector3){scale,scale,scale},tint);}
+void DrawModelPointsEx(Model model,Vector3 position,Vector3 axis,float angle,Vector3 scale,Color tint){mr_draw_model_internal(model,mr_model_matrix(position,axis,angle,scale),tint,2);}
+void DrawModelPoints(Model model,Vector3 position,float scale,Color tint){DrawModelPointsEx(model,position,(Vector3){0,1,0},0,(Vector3){scale,scale,scale},tint);}
+BoundingBox GetModelBoundingBox(Model model){BoundingBox result={0};bool first=true;if(!IsModelValid(model))return result;for(int i=0;i<model.meshCount;i++){BoundingBox box=GetMeshBoundingBox(model.meshes[i]);Vector3 corners[8]={{box.min.x,box.min.y,box.min.z},{box.max.x,box.min.y,box.min.z},{box.min.x,box.max.y,box.min.z},{box.max.x,box.max.y,box.min.z},{box.min.x,box.min.y,box.max.z},{box.max.x,box.min.y,box.max.z},{box.min.x,box.max.y,box.max.z},{box.max.x,box.max.y,box.max.z}};for(int j=0;j<8;j++){Vector3 p=mr_v3_transform(corners[j],model.transform);if(first){result.min=result.max=p;first=false;}if(p.x<result.min.x)result.min.x=p.x;if(p.y<result.min.y)result.min.y=p.y;if(p.z<result.min.z)result.min.z=p.z;if(p.x>result.max.x)result.max.x=p.x;if(p.y>result.max.y)result.max.y=p.y;if(p.z>result.max.z)result.max.z=p.z;}}return result;}
+void DrawBoundingBox(BoundingBox b,Color color){Vector3 size={b.max.x-b.min.x,b.max.y-b.min.y,b.max.z-b.min.z},center={(b.min.x+b.max.x)/2,(b.min.y+b.max.y)/2,(b.min.z+b.max.z)/2};DrawCubeWiresV(center,size,color);}
+RayCollision GetRayCollisionMesh(Ray ray,Mesh mesh,Matrix transform){RayCollision closest={0};if(!mesh.vertices)return closest;for(int t=0;t<mesh.triangleCount;t++){int ids[3]={mesh.indices?mesh.indices[t*3]:t*3,mesh.indices?mesh.indices[t*3+1]:t*3+1,mesh.indices?mesh.indices[t*3+2]:t*3+2};if(ids[2]>=mesh.vertexCount)continue;Vector3 p[3];for(int j=0;j<3;j++)p[j]=mr_v3_transform((Vector3){mesh.vertices[ids[j]*3],mesh.vertices[ids[j]*3+1],mesh.vertices[ids[j]*3+2]},transform);RayCollision hit=GetRayCollisionTriangle(ray,p[0],p[1],p[2]);if(hit.hit&&(!closest.hit||hit.distance<closest.distance))closest=hit;}return closest;}
+Mesh GenMeshPlane(float width,float length,int resX,int resZ){if(resX<1)resX=1;if(resZ<1)resZ=1;Mesh mesh={0};mesh.triangleCount=resX*resZ*2;mesh.vertexCount=mesh.triangleCount*3;mesh.vertices=MemAlloc(mesh.vertexCount*3*sizeof(float));mesh.normals=MemAlloc(mesh.vertexCount*3*sizeof(float));mesh.texcoords=MemAlloc(mesh.vertexCount*2*sizeof(float));if(!mesh.vertices||!mesh.normals||!mesh.texcoords){UnloadMesh(mesh);return(Mesh){0};}int v=0;for(int z=0;z<resZ;z++)for(int x=0;x<resX;x++){float x0=-width/2+width*x/resX,x1=-width/2+width*(x+1)/resX,z0=-length/2+length*z/resZ,z1=-length/2+length*(z+1)/resZ;Vector3 p[6]={{x0,0,z0},{x1,0,z1},{x1,0,z0},{x0,0,z0},{x0,0,z1},{x1,0,z1}};Vector2 uv[6]={{(float)x/resX,(float)z/resZ},{(float)(x+1)/resX,(float)(z+1)/resZ},{(float)(x+1)/resX,(float)z/resZ},{(float)x/resX,(float)z/resZ},{(float)x/resX,(float)(z+1)/resZ},{(float)(x+1)/resX,(float)(z+1)/resZ}};for(int i=0;i<6;i++,v++){mesh.vertices[v*3]=p[i].x;mesh.vertices[v*3+1]=p[i].y;mesh.vertices[v*3+2]=p[i].z;mesh.normals[v*3+1]=1;mesh.texcoords[v*2]=uv[i].x;mesh.texcoords[v*2+1]=uv[i].y;}}UploadMesh(&mesh,false);return mesh;}
+Mesh GenMeshCube(float width,float height,float length){Mesh mesh={0};mesh.triangleCount=12;mesh.vertexCount=36;mesh.vertices=MemAlloc(108*sizeof(float));mesh.normals=MemAlloc(108*sizeof(float));mesh.texcoords=MemAlloc(72*sizeof(float));if(!mesh.vertices||!mesh.normals||!mesh.texcoords){UnloadMesh(mesh);return(Mesh){0};}Vector3 p[8]={{-width/2,-height/2,-length/2},{width/2,-height/2,-length/2},{width/2,height/2,-length/2},{-width/2,height/2,-length/2},{-width/2,-height/2,length/2},{width/2,-height/2,length/2},{width/2,height/2,length/2},{-width/2,height/2,length/2}};int faces[6][4]={{0,3,2,1},{4,5,6,7},{0,1,5,4},{3,7,6,2},{0,4,7,3},{1,2,6,5}};Vector3 normals[6]={{0,0,-1},{0,0,1},{0,-1,0},{0,1,0},{-1,0,0},{1,0,0}};int v=0;int order[6]={0,1,2,0,2,3};Vector2 uv[4]={{0,1},{1,1},{1,0},{0,0}};for(int f=0;f<6;f++)for(int j=0;j<6;j++,v++){int q=order[j];Vector3 point=p[faces[f][q]];mesh.vertices[v*3]=point.x;mesh.vertices[v*3+1]=point.y;mesh.vertices[v*3+2]=point.z;mesh.normals[v*3]=normals[f].x;mesh.normals[v*3+1]=normals[f].y;mesh.normals[v*3+2]=normals[f].z;mesh.texcoords[v*2]=uv[q].x;mesh.texcoords[v*2+1]=uv[q].y;}UploadMesh(&mesh,false);return mesh;}
+Mesh GenMeshSphere(float radius,int rings,int slices){if(rings<2)rings=2;if(slices<3)slices=3;Mesh mesh={0};mesh.triangleCount=rings*slices*2;mesh.vertexCount=mesh.triangleCount*3;mesh.vertices=MemAlloc(mesh.vertexCount*3*sizeof(float));mesh.normals=MemAlloc(mesh.vertexCount*3*sizeof(float));mesh.texcoords=MemAlloc(mesh.vertexCount*2*sizeof(float));if(!mesh.vertices||!mesh.normals||!mesh.texcoords){UnloadMesh(mesh);return(Mesh){0};}int v=0;for(int y=0;y<rings;y++)for(int x=0;x<slices;x++){float a0=-MR_PI/2+MR_PI*y/rings,a1=-MR_PI/2+MR_PI*(y+1)/rings,b0=2*MR_PI*x/slices,b1=2*MR_PI*(x+1)/slices;Vector3 p[6]={{cosf(a0)*cosf(b0),sinf(a0),cosf(a0)*sinf(b0)},{cosf(a0)*cosf(b1),sinf(a0),cosf(a0)*sinf(b1)},{cosf(a1)*cosf(b1),sinf(a1),cosf(a1)*sinf(b1)},{cosf(a0)*cosf(b0),sinf(a0),cosf(a0)*sinf(b0)},{cosf(a1)*cosf(b1),sinf(a1),cosf(a1)*sinf(b1)},{cosf(a1)*cosf(b0),sinf(a1),cosf(a1)*sinf(b0)}};Vector2 uv[6]={{(float)x/slices,(float)y/rings},{(float)(x+1)/slices,(float)y/rings},{(float)(x+1)/slices,(float)(y+1)/rings},{(float)x/slices,(float)y/rings},{(float)(x+1)/slices,(float)(y+1)/rings},{(float)x/slices,(float)(y+1)/rings}};for(int i=0;i<6;i++,v++){mesh.vertices[v*3]=p[i].x*radius;mesh.vertices[v*3+1]=p[i].y*radius;mesh.vertices[v*3+2]=p[i].z*radius;mesh.normals[v*3]=p[i].x;mesh.normals[v*3+1]=p[i].y;mesh.normals[v*3+2]=p[i].z;mesh.texcoords[v*2]=uv[i].x;mesh.texcoords[v*2+1]=uv[i].y;}}UploadMesh(&mesh,false);return mesh;}
+typedef enum MRJsonType { MR_JSON_OBJECT,MR_JSON_ARRAY,MR_JSON_STRING,MR_JSON_VALUE } MRJsonType;
+typedef struct MRJsonToken { int start,end,parent; MRJsonType type; } MRJsonToken;
+static int mr_json_tokenize(const char *json,int length,MRJsonToken *tokens,int capacity){int count=0,parent=-1;for(int i=0;i<length;){char c=json[i];if(c=='{'||c=='['){if(count>=capacity)return-1;tokens[count]=(MRJsonToken){i,-1,parent,c=='{'?MR_JSON_OBJECT:MR_JSON_ARRAY};parent=count++;i++;}else if(c=='}'||c==']'){if(parent<0)return-1;tokens[parent].end=i+1;parent=tokens[parent].parent;i++;}else if(c=='\"'){int start=++i;while(i<length&&json[i]!='\"'){if(json[i]=='\\'&&i+1<length)i+=2;else i++;}if(i>=length||count>=capacity)return-1;tokens[count++]=(MRJsonToken){start,i,parent,MR_JSON_STRING};i++;}else if(c==' '||c=='\t'||c=='\r'||c=='\n'||c==':'||c==',')i++;else{int start=i;while(i<length&&json[i]!=','&&json[i]!=']'&&json[i]!='}'&&json[i]!=' '&&json[i]!='\t'&&json[i]!='\r'&&json[i]!='\n')i++;if(count>=capacity)return-1;tokens[count++]=(MRJsonToken){start,i,parent,MR_JSON_VALUE};}}return parent==-1?count:-1;}
+static bool mr_json_equal(const char *json,MRJsonToken token,const char *text){int i=0;while(text[i]&&token.start+i<token.end&&json[token.start+i]==text[i])i++;return !text[i]&&token.start+i==token.end;}
+static int mr_json_skip(MRJsonToken *tokens,int count,int index){int end=tokens[index].end,indexNext=index+1;while(indexNext<count&&tokens[indexNext].start<end)indexNext++;return indexNext;}
+static int mr_json_get(const char *json,MRJsonToken *tokens,int count,int object,const char *key){if(object<0||tokens[object].type!=MR_JSON_OBJECT)return-1;for(int i=object+1;i<count&&tokens[i].start<tokens[object].end;i++){if(tokens[i].parent==object&&tokens[i].type==MR_JSON_STRING){int value=i+1;if(value<count&&mr_json_equal(json,tokens[i],key))return value;if(value<count)i=mr_json_skip(tokens,count,value)-1;}}return-1;}
+static int mr_json_at(MRJsonToken *tokens,int count,int array,int wanted){if(array<0||tokens[array].type!=MR_JSON_ARRAY)return-1;int n=0;for(int i=array+1;i<count&&tokens[i].start<tokens[array].end;i=mr_json_skip(tokens,count,i))if(tokens[i].parent==array){if(n++==wanted)return i;}return-1;}
+static int mr_json_count(MRJsonToken *tokens,int count,int array){int n=0;while(mr_json_at(tokens,count,array,n)>=0)n++;return n;}
+static double mr_json_number(const char *json,MRJsonToken token){int i=token.start,sign=1,exponent=0,expSign=1;double value=0,fraction=0.1;if(i<token.end&&json[i]=='-'){sign=-1;i++;}while(i<token.end&&json[i]>='0'&&json[i]<='9')value=value*10+(json[i++]-'0');if(i<token.end&&json[i]=='.'){i++;while(i<token.end&&json[i]>='0'&&json[i]<='9'){value+=(json[i++]-'0')*fraction;fraction*=0.1;}}if(i<token.end&&(json[i]=='e'||json[i]=='E')){i++;if(i<token.end&&(json[i]=='-'||json[i]=='+')){if(json[i++]=='-')expSign=-1;}while(i<token.end&&json[i]>='0'&&json[i]<='9')exponent=exponent*10+(json[i++]-'0');double power=1;while(exponent--)power*=10;value=expSign<0?value/power:value*power;}return value*sign;}
+static int mr_json_int(const char *json,MRJsonToken token){return(int)mr_json_number(json,token);}
+static uint32_t mr_u32le(const unsigned char *p){return(uint32_t)p[0]|((uint32_t)p[1]<<8)|((uint32_t)p[2]<<16)|((uint32_t)p[3]<<24);}
+typedef struct MRGlbView { const unsigned char *data; int length,stride; } MRGlbView;
+typedef struct MRGlbAccessor { const unsigned char *data; int count,stride,componentType,components; } MRGlbAccessor;
+static int mr_gltf_components(const char *json,MRJsonToken token){if(mr_json_equal(json,token,"SCALAR"))return 1;if(mr_json_equal(json,token,"VEC2"))return 2;if(mr_json_equal(json,token,"VEC3"))return 3;if(mr_json_equal(json,token,"VEC4"))return 4;if(mr_json_equal(json,token,"MAT4"))return 16;return 0;}
+static int mr_gltf_component_size(int type){return type==5120||type==5121?1:type==5122||type==5123?2:type==5125||type==5126?4:0;}
+static unsigned int mr_gltf_index(const unsigned char *data,int componentType){if(componentType==5121)return data[0];if(componentType==5123)return(unsigned int)(data[0]|data[1]<<8);if(componentType==5125)return mr_u32le(data);return 0;}
+/* glTF 2.0 loader. It deliberately follows raylib's practical contract:
+ * triangle primitives, one skin, four joints per vertex, metallic/roughness
+ * materials, external/embedded resources, and flattened node instances. */
+typedef struct MRGltfBuffer { const unsigned char *data; unsigned char *owned; int length; } MRGltfBuffer;
+typedef struct MRGltfDoc {
+    unsigned char *file; const char *json; int jsonLength; MRJsonToken *tokens, *rootToken;
+    int tokenCount,bufferCount; MRGltfBuffer *buffers; const unsigned char *glbBin; int glbBinLength;
+    char directory[1024];
+} MRGltfDoc;
+typedef struct MRGltfAccessor { const unsigned char *data; int count,stride,componentType,components; bool normalized; } MRGltfAccessor;
+
+static int mr_token_text(const char *json,MRJsonToken token,char *out,int capacity){
+    int n=0; if(!out||capacity<=0)return 0;
+    for(int i=token.start;i<token.end&&n+1<capacity;i++){
+        if(json[i]=='\\'&&i+1<token.end){char c=json[++i];out[n++]=(c=='/')?'/':(c=='\\')?'\\':(c=='n')?'\n':(c=='r')?'\r':(c=='t')?'\t':c;}
+        else out[n++]=json[i];
+    } out[n]=0; return n;
+}
+static void mr_join_path(char *out,int capacity,const char *directory,const char *name){
+    int n=0;if(!out||capacity<=0)return;
+    if(name&&((name[0]=='/'||name[0]=='\\')||(name[0]&&name[1]==':'))){while(name[n]&&n+1<capacity){out[n]=name[n];n++;}out[n]=0;return;}
+    while(directory&&directory[n]&&n+1<capacity){out[n]=directory[n];n++;}
+    if(n&&out[n-1]!='/'&&out[n-1]!='\\'&&n+1<capacity)out[n++]='/';
+    for(int i=0;name&&name[i]&&n+1<capacity;i++)out[n++]=name[i];out[n]=0;
+}
+static int mr_b64_value(char c){return c>='A'&&c<='Z'?c-'A':c>='a'&&c<='z'?c-'a'+26:c>='0'&&c<='9'?c-'0'+52:c=='+'?62:c=='/'?63:-1;}
+static bool mr_text_contains(const char *text,const char *part){if(!text||!part)return false;unsigned int textLength=TextLength(text),length=TextLength(part);if(!length)return true;if(length>textLength)return false;for(unsigned int i=0;i+length<=textLength;i++)if(memcmp(text+i,part,length)==0)return true;return false;}
+static unsigned char *mr_decode_data_uri(const char *uri,int *size){
+    if(size)*size=0;if(!uri)return NULL;const char *comma=uri;while(*comma&&*comma!=',')comma++;if(!*comma)return NULL;
+    bool base64=false;for(const char *p=uri;p<comma;p++)if((p+7<=comma)&&memcmp(p,";base64",7)==0){base64=true;break;}if(!base64)return NULL;
+    const char *p=comma+1;int length=(int)TextLength(p),capacity=length*3/4+3,n=0,value=0,bits=-8;unsigned char *out=MemAlloc((unsigned int)capacity);if(!out)return NULL;
+    for(;*p;p++){if(*p=='=')break;int digit=mr_b64_value(*p);if(digit<0)continue;value=(value<<6)|digit;bits+=6;if(bits>=0){out[n++]=(unsigned char)((value>>bits)&255);bits-=8;}}
+    if(size)*size=n;return out;
+}
+static bool mr_gltf_open(const char *fileName,MRGltfDoc *doc){
+    memset(doc,0,sizeof *doc);if(!fileName||!IsFileExtension(fileName,".gltf;.glb"))return false;
+    const char *directory=GetDirectoryPath(fileName);int directoryLength=(int)TextLength(directory);if(directoryLength>=(int)sizeof(doc->directory))directoryLength=(int)sizeof(doc->directory)-1;memcpy(doc->directory,directory,(size_t)directoryLength);doc->directory[directoryLength]=0;
+    int fileSize=0;doc->file=LoadFileData(fileName,&fileSize);if(!doc->file)return false;
+    if(IsFileExtension(fileName,".glb")){
+        if(fileSize<20||mr_u32le(doc->file)!=0x46546c67u||mr_u32le(doc->file+4)!=2)goto fail;
+        for(int offset=12;offset+8<=fileSize;){int length=(int)mr_u32le(doc->file+offset);uint32_t type=mr_u32le(doc->file+offset+4);offset+=8;if(length<0||offset+length>fileSize)goto fail;if(type==0x4e4f534au){doc->json=(const char*)doc->file+offset;doc->jsonLength=length;}else if(type==0x004e4942u){doc->glbBin=doc->file+offset;doc->glbBinLength=length;}offset+=length;}
+    }else{doc->json=(const char*)doc->file;doc->jsonLength=fileSize;}
+    if(!doc->json||doc->jsonLength<=0)goto fail;
+    int capacity=doc->jsonLength/2+128;doc->tokens=MemAlloc((unsigned int)capacity*sizeof(MRJsonToken));
+    doc->tokenCount=doc->tokens?mr_json_tokenize(doc->json,doc->jsonLength,doc->tokens,capacity):-1;
+    if(doc->tokenCount<=0||doc->tokens[0].type!=MR_JSON_OBJECT)goto fail;doc->rootToken=&doc->tokens[0];
+    int buffers=mr_json_get(doc->json,doc->tokens,doc->tokenCount,0,"buffers");doc->bufferCount=mr_json_count(doc->tokens,doc->tokenCount,buffers);
+    if(doc->bufferCount<1&&doc->glbBin)doc->bufferCount=1;
+    doc->buffers=MemAlloc((unsigned int)doc->bufferCount*sizeof(MRGltfBuffer));if(doc->bufferCount&&!doc->buffers)goto fail;
+    if(doc->buffers)memset(doc->buffers,0,(size_t)doc->bufferCount*sizeof(MRGltfBuffer));
+    for(int i=0;i<doc->bufferCount;i++){
+        int object=mr_json_at(doc->tokens,doc->tokenCount,buffers,i),uriToken=mr_json_get(doc->json,doc->tokens,doc->tokenCount,object,"uri");
+        if(uriToken<0&&i==0&&doc->glbBin){doc->buffers[i].data=doc->glbBin;doc->buffers[i].length=doc->glbBinLength;continue;}
+        if(uriToken<0)continue;char uri[2048];mr_token_text(doc->json,doc->tokens[uriToken],uri,sizeof uri);int size=0;unsigned char *data=NULL;
+        if(memcmp(uri,"data:",5)==0)data=mr_decode_data_uri(uri,&size);else{char path[2048];mr_join_path(path,sizeof path,doc->directory,uri);data=LoadFileData(path,&size);}
+        doc->buffers[i]=(MRGltfBuffer){data,data,size};
+    }
+    return true;
+fail:
+    if(doc->buffers){for(int i=0;i<doc->bufferCount;i++)MemFree(doc->buffers[i].owned);MemFree(doc->buffers);}MemFree(doc->tokens);UnloadFileData(doc->file);memset(doc,0,sizeof *doc);return false;
+}
+static void mr_gltf_close(MRGltfDoc *doc){if(!doc)return;if(doc->buffers)for(int i=0;i<doc->bufferCount;i++)MemFree(doc->buffers[i].owned);MemFree(doc->buffers);MemFree(doc->tokens);UnloadFileData(doc->file);memset(doc,0,sizeof *doc);}
+static MRGlbView mr_gltf2_view(MRGltfDoc *doc,int viewIndex){
+    MRGlbView result={0};int views=mr_json_get(doc->json,doc->tokens,doc->tokenCount,0,"bufferViews"),view=mr_json_at(doc->tokens,doc->tokenCount,views,viewIndex);if(view<0)return result;
+    int bufferToken=mr_json_get(doc->json,doc->tokens,doc->tokenCount,view,"buffer"),offsetToken=mr_json_get(doc->json,doc->tokens,doc->tokenCount,view,"byteOffset"),lengthToken=mr_json_get(doc->json,doc->tokens,doc->tokenCount,view,"byteLength"),strideToken=mr_json_get(doc->json,doc->tokens,doc->tokenCount,view,"byteStride");
+    int buffer=bufferToken>=0?mr_json_int(doc->json,doc->tokens[bufferToken]):0,offset=offsetToken>=0?mr_json_int(doc->json,doc->tokens[offsetToken]):0,length=lengthToken>=0?mr_json_int(doc->json,doc->tokens[lengthToken]):0;
+    if(buffer<0||buffer>=doc->bufferCount||!doc->buffers[buffer].data||offset<0||length<0||offset+length>doc->buffers[buffer].length)return result;
+    result.data=doc->buffers[buffer].data+offset;result.length=length;result.stride=strideToken>=0?mr_json_int(doc->json,doc->tokens[strideToken]):0;return result;
+}
+static MRGltfAccessor mr_gltf2_accessor(MRGltfDoc *doc,int accessorIndex){
+    MRGltfAccessor result={0};int accessors=mr_json_get(doc->json,doc->tokens,doc->tokenCount,0,"accessors"),accessor=mr_json_at(doc->tokens,doc->tokenCount,accessors,accessorIndex);if(accessor<0)return result;
+    int viewToken=mr_json_get(doc->json,doc->tokens,doc->tokenCount,accessor,"bufferView"),countToken=mr_json_get(doc->json,doc->tokens,doc->tokenCount,accessor,"count"),componentToken=mr_json_get(doc->json,doc->tokens,doc->tokenCount,accessor,"componentType"),typeToken=mr_json_get(doc->json,doc->tokens,doc->tokenCount,accessor,"type"),offsetToken=mr_json_get(doc->json,doc->tokens,doc->tokenCount,accessor,"byteOffset"),normalizedToken=mr_json_get(doc->json,doc->tokens,doc->tokenCount,accessor,"normalized");
+    if(viewToken<0||countToken<0||componentToken<0||typeToken<0)return result;MRGlbView view=mr_gltf2_view(doc,mr_json_int(doc->json,doc->tokens[viewToken]));int offset=offsetToken>=0?mr_json_int(doc->json,doc->tokens[offsetToken]):0;
+    result.count=mr_json_int(doc->json,doc->tokens[countToken]);result.componentType=mr_json_int(doc->json,doc->tokens[componentToken]);result.components=mr_gltf_components(doc->json,doc->tokens[typeToken]);result.normalized=normalizedToken>=0&&mr_json_equal(doc->json,doc->tokens[normalizedToken],"true");
+    int packed=result.components*mr_gltf_component_size(result.componentType);result.stride=view.stride?view.stride:packed;
+    if(!view.data||offset<0||result.count<0||packed<=0||result.stride<packed||offset+(result.count?result.count-1:0)*result.stride+packed>view.length)return(MRGltfAccessor){0};result.data=view.data+offset;return result;
+}
+static float mr_gltf2_value(const unsigned char *p,int type,bool normalized){
+    if(type==5126){float v;memcpy(&v,p,4);return v;}if(type==5121)return normalized?(float)p[0]/255.0f:(float)p[0];
+    if(type==5120){int v=(signed char)p[0];return normalized?(v<-127?-1.0f:(float)v/127.0f):(float)v;}
+    if(type==5123){unsigned int v=(unsigned int)p[0]|((unsigned int)p[1]<<8);return normalized?(float)v/65535.0f:(float)v;}
+    if(type==5122){int v=(short)((unsigned int)p[0]|((unsigned int)p[1]<<8));return normalized?(v<-32767?-1.0f:(float)v/32767.0f):(float)v;}
+    if(type==5125)return(float)mr_u32le(p);return 0;
+}
+static void mr_gltf2_read(MRGltfAccessor a,int index,float *out,int count){int size=mr_gltf_component_size(a.componentType);if(!a.data||index<0||index>=a.count)return;const unsigned char *p=a.data+index*a.stride;for(int i=0;i<count;i++)out[i]=i<a.components?mr_gltf2_value(p+i*size,a.componentType,a.normalized):0;}
+static Matrix mr_gltf_trs(Vector3 t,Quaternion q,Vector3 s){
+    float n=sqrtf(q.x*q.x+q.y*q.y+q.z*q.z+q.w*q.w);if(n<=0)q=(Quaternion){0,0,0,1};else{q.x/=n;q.y/=n;q.z/=n;q.w/=n;}float x=q.x,y=q.y,z=q.z,w=q.w;Matrix m=mr_matrix_identity();
+    m.m0=(1-2*y*y-2*z*z)*s.x;m.m4=(2*x*y-2*z*w)*s.y;m.m8=(2*x*z+2*y*w)*s.z;
+    m.m1=(2*x*y+2*z*w)*s.x;m.m5=(1-2*x*x-2*z*z)*s.y;m.m9=(2*y*z-2*x*w)*s.z;
+    m.m2=(2*x*z-2*y*w)*s.x;m.m6=(2*y*z+2*x*w)*s.y;m.m10=(1-2*x*x-2*y*y)*s.z;m.m12=t.x;m.m13=t.y;m.m14=t.z;return m;
+}
+static Transform mr_gltf_node_transform(MRGltfDoc *doc,int node){
+    Transform tr={{0,0,0},{0,0,0,1},{1,1,1}};if(node<0)return tr;int token;
+    token=mr_json_get(doc->json,doc->tokens,doc->tokenCount,node,"translation");for(int i=0;i<3&&token>=0;i++){int v=mr_json_at(doc->tokens,doc->tokenCount,token,i);if(v>=0)((float*)&tr.translation)[i]=(float)mr_json_number(doc->json,doc->tokens[v]);}
+    token=mr_json_get(doc->json,doc->tokens,doc->tokenCount,node,"rotation");for(int i=0;i<4&&token>=0;i++){int v=mr_json_at(doc->tokens,doc->tokenCount,token,i);if(v>=0)((float*)&tr.rotation)[i]=(float)mr_json_number(doc->json,doc->tokens[v]);}
+    token=mr_json_get(doc->json,doc->tokens,doc->tokenCount,node,"scale");for(int i=0;i<3&&token>=0;i++){int v=mr_json_at(doc->tokens,doc->tokenCount,token,i);if(v>=0)((float*)&tr.scale)[i]=(float)mr_json_number(doc->json,doc->tokens[v]);}return tr;
+}
+static Matrix mr_gltf_node_local(MRGltfDoc *doc,int node){
+    int matrix=mr_json_get(doc->json,doc->tokens,doc->tokenCount,node,"matrix");if(matrix>=0){float a[16]={0};for(int i=0;i<16;i++){int v=mr_json_at(doc->tokens,doc->tokenCount,matrix,i);if(v>=0)a[i]=(float)mr_json_number(doc->json,doc->tokens[v]);}Matrix m={0};m.m0=a[0];m.m1=a[1];m.m2=a[2];m.m3=a[3];m.m4=a[4];m.m5=a[5];m.m6=a[6];m.m7=a[7];m.m8=a[8];m.m9=a[9];m.m10=a[10];m.m11=a[11];m.m12=a[12];m.m13=a[13];m.m14=a[14];m.m15=a[15];return m;}Transform t=mr_gltf_node_transform(doc,node);return mr_gltf_trs(t.translation,t.rotation,t.scale);
+}
+static int mr_gltf_parent(MRGltfDoc *doc,int nodeIndex){int nodes=mr_json_get(doc->json,doc->tokens,doc->tokenCount,0,"nodes"),count=mr_json_count(doc->tokens,doc->tokenCount,nodes);for(int i=0;i<count;i++){int node=mr_json_at(doc->tokens,doc->tokenCount,nodes,i),children=mr_json_get(doc->json,doc->tokens,doc->tokenCount,node,"children"),n=mr_json_count(doc->tokens,doc->tokenCount,children);for(int j=0;j<n;j++){int child=mr_json_at(doc->tokens,doc->tokenCount,children,j);if(child>=0&&mr_json_int(doc->json,doc->tokens[child])==nodeIndex)return i;}}return-1;}
+static Matrix mr_gltf_world(MRGltfDoc *doc,int nodeIndex){int nodes=mr_json_get(doc->json,doc->tokens,doc->tokenCount,0,"nodes"),node=mr_json_at(doc->tokens,doc->tokenCount,nodes,nodeIndex);Matrix world=mr_gltf_node_local(doc,node);for(int depth=0;depth<128;depth++){int parent=mr_gltf_parent(doc,nodeIndex);if(parent<0)break;nodeIndex=parent;node=mr_json_at(doc->tokens,doc->tokenCount,nodes,nodeIndex);world=mr_matrix_multiply(mr_gltf_node_local(doc,node),world);}return world;}
+static Vector3 mr_transform_direction(Vector3 v,Matrix m){return mr_v3_norm((Vector3){m.m0*v.x+m.m4*v.y+m.m8*v.z,m.m1*v.x+m.m5*v.y+m.m9*v.z,m.m2*v.x+m.m6*v.y+m.m10*v.z});}
+static Vector3 mr_transform_normal(Vector3 v,Matrix m){float a=m.m0,b=m.m4,c=m.m8,d=m.m1,e=m.m5,f=m.m9,g=m.m2,h=m.m6,i=m.m10;return mr_v3_norm((Vector3){(e*i-f*h)*v.x+(f*g-d*i)*v.y+(d*h-e*g)*v.z,(c*h-b*i)*v.x+(a*i-c*g)*v.y+(b*g-a*h)*v.z,(b*f-c*e)*v.x+(c*d-a*f)*v.y+(a*e-b*d)*v.z});}
+static Texture2D mr_gltf_image_texture(MRGltfDoc *doc,int imageIndex){
+    int images=mr_json_get(doc->json,doc->tokens,doc->tokenCount,0,"images"),image=mr_json_at(doc->tokens,doc->tokenCount,images,imageIndex);if(image<0)return(Texture2D){0};int viewToken=mr_json_get(doc->json,doc->tokens,doc->tokenCount,image,"bufferView"),uriToken=mr_json_get(doc->json,doc->tokens,doc->tokenCount,image,"uri"),mimeToken=mr_json_get(doc->json,doc->tokens,doc->tokenCount,image,"mimeType");Image decoded={0};char mime[64]="",uri[2048]="";if(mimeToken>=0)mr_token_text(doc->json,doc->tokens[mimeToken],mime,sizeof mime);
+    if(viewToken>=0){MRGlbView view=mr_gltf2_view(doc,mr_json_int(doc->json,doc->tokens[viewToken]));const char *ext=mr_text_contains(mime,"jpeg")?".jpg":mr_text_contains(mime,"gif")?".gif":".png";if(view.data)decoded=LoadImageFromMemory(ext,view.data,view.length);}
+    else if(uriToken>=0){mr_token_text(doc->json,doc->tokens[uriToken],uri,sizeof uri);if(memcmp(uri,"data:",5)==0){int size=0;unsigned char *bytes=mr_decode_data_uri(uri,&size);const char *ext=mr_text_contains(uri,"image/jpeg")?".jpg":mr_text_contains(uri,"image/gif")?".gif":".png";if(bytes)decoded=LoadImageFromMemory(ext,bytes,size);MemFree(bytes);}else{char path[2048];mr_join_path(path,sizeof path,doc->directory,uri);decoded=LoadImage(path);}}
+    Texture2D texture=LoadTextureFromImage(decoded);UnloadImage(decoded);return texture;
+}
+static Texture2D mr_gltf_info_texture(MRGltfDoc *doc,int info){int indexToken=mr_json_get(doc->json,doc->tokens,doc->tokenCount,info,"index");if(indexToken<0)return(Texture2D){0};int textures=mr_json_get(doc->json,doc->tokens,doc->tokenCount,0,"textures"),texture=mr_json_at(doc->tokens,doc->tokenCount,textures,mr_json_int(doc->json,doc->tokens[indexToken])),source=mr_json_get(doc->json,doc->tokens,doc->tokenCount,texture,"source");return source>=0?mr_gltf_image_texture(doc,mr_json_int(doc->json,doc->tokens[source])):(Texture2D){0};}
+static void mr_gltf_material(MRGltfDoc *doc,int materialToken,Material *material){
+    int pbr=mr_json_get(doc->json,doc->tokens,doc->tokenCount,materialToken,"pbrMetallicRoughness"),factor=mr_json_get(doc->json,doc->tokens,doc->tokenCount,pbr,"baseColorFactor");
+    if(factor>=0)for(int i=0;i<4;i++){int v=mr_json_at(doc->tokens,doc->tokenCount,factor,i);if(v>=0){int c=(int)(mr_json_number(doc->json,doc->tokens[v])*255+0.5);if(c<0)c=0;if(c>255)c=255;((unsigned char*)&material->maps[MATERIAL_MAP_ALBEDO].color)[i]=(unsigned char)c;}}
+    int info=mr_json_get(doc->json,doc->tokens,doc->tokenCount,pbr,"baseColorTexture");Texture2D texture=mr_gltf_info_texture(doc,info);if(IsTextureValid(texture))material->maps[MATERIAL_MAP_ALBEDO].texture=texture;
+    int value=mr_json_get(doc->json,doc->tokens,doc->tokenCount,pbr,"metallicFactor");if(value>=0)material->maps[MATERIAL_MAP_METALNESS].value=(float)mr_json_number(doc->json,doc->tokens[value]);
+    value=mr_json_get(doc->json,doc->tokens,doc->tokenCount,pbr,"roughnessFactor");if(value>=0)material->maps[MATERIAL_MAP_ROUGHNESS].value=(float)mr_json_number(doc->json,doc->tokens[value]);
+    info=mr_json_get(doc->json,doc->tokens,doc->tokenCount,pbr,"metallicRoughnessTexture");texture=mr_gltf_info_texture(doc,info);if(IsTextureValid(texture))material->maps[MATERIAL_MAP_ROUGHNESS].texture=texture;
+    const char *keys[3]={"normalTexture","occlusionTexture","emissiveTexture"};int maps[3]={MATERIAL_MAP_NORMAL,MATERIAL_MAP_OCCLUSION,MATERIAL_MAP_EMISSION};for(int i=0;i<3;i++){info=mr_json_get(doc->json,doc->tokens,doc->tokenCount,materialToken,keys[i]);texture=mr_gltf_info_texture(doc,info);if(IsTextureValid(texture))material->maps[maps[i]].texture=texture;}
+    factor=mr_json_get(doc->json,doc->tokens,doc->tokenCount,materialToken,"emissiveFactor");if(factor>=0)for(int i=0;i<3;i++){int v=mr_json_at(doc->tokens,doc->tokenCount,factor,i);if(v>=0){int c=(int)(mr_json_number(doc->json,doc->tokens[v])*255+0.5);if(c<0)c=0;if(c>255)c=255;((unsigned char*)&material->maps[MATERIAL_MAP_EMISSION].color)[i]=(unsigned char)c;}}material->maps[MATERIAL_MAP_EMISSION].color.a=255;
+}
+static Transform mr_matrix_decompose(Matrix m){
+    Transform t={{m.m12,m.m13,m.m14},{0,0,0,1},{sqrtf(m.m0*m.m0+m.m1*m.m1+m.m2*m.m2),sqrtf(m.m4*m.m4+m.m5*m.m5+m.m6*m.m6),sqrtf(m.m8*m.m8+m.m9*m.m9+m.m10*m.m10)}};
+    if(t.scale.x==0||t.scale.y==0||t.scale.z==0)return t;float a00=m.m0/t.scale.x,a01=m.m4/t.scale.y,a02=m.m8/t.scale.z,a10=m.m1/t.scale.x,a11=m.m5/t.scale.y,a12=m.m9/t.scale.z,a20=m.m2/t.scale.x,a21=m.m6/t.scale.y,a22=m.m10/t.scale.z,trace=a00+a11+a22;
+    if(trace>0){float s=sqrtf(trace+1)*2;t.rotation.w=0.25f*s;t.rotation.x=(a21-a12)/s;t.rotation.y=(a02-a20)/s;t.rotation.z=(a10-a01)/s;}
+    else if(a00>a11&&a00>a22){float s=sqrtf(1+a00-a11-a22)*2;t.rotation.w=(a21-a12)/s;t.rotation.x=0.25f*s;t.rotation.y=(a01+a10)/s;t.rotation.z=(a02+a20)/s;}
+    else if(a11>a22){float s=sqrtf(1+a11-a00-a22)*2;t.rotation.w=(a02-a20)/s;t.rotation.x=(a01+a10)/s;t.rotation.y=0.25f*s;t.rotation.z=(a12+a21)/s;}
+    else{float s=sqrtf(1+a22-a00-a11)*2;t.rotation.w=(a10-a01)/s;t.rotation.x=(a02+a20)/s;t.rotation.y=(a12+a21)/s;t.rotation.z=0.25f*s;}return t;
+}
+static int mr_gltf_attribute(MRGltfDoc *doc,int attributes,const char *name){int token=mr_json_get(doc->json,doc->tokens,doc->tokenCount,attributes,name);return token>=0?mr_json_int(doc->json,doc->tokens[token]):-1;}
+static bool mr_gltf_load_primitive(MRGltfDoc *doc,int primitive,Matrix world,Mesh *mesh,int *materialId){
+    int mode=mr_json_get(doc->json,doc->tokens,doc->tokenCount,primitive,"mode");if(mode>=0&&mr_json_int(doc->json,doc->tokens[mode])!=4)return false;int attributes=mr_json_get(doc->json,doc->tokens,doc->tokenCount,primitive,"attributes");
+    int posIndex=mr_gltf_attribute(doc,attributes,"POSITION"),normalIndex=mr_gltf_attribute(doc,attributes,"NORMAL"),uvIndex=mr_gltf_attribute(doc,attributes,"TEXCOORD_0"),uv2Index=mr_gltf_attribute(doc,attributes,"TEXCOORD_1"),tangentIndex=mr_gltf_attribute(doc,attributes,"TANGENT"),colorIndex=mr_gltf_attribute(doc,attributes,"COLOR_0"),jointsIndex=mr_gltf_attribute(doc,attributes,"JOINTS_0"),weightsIndex=mr_gltf_attribute(doc,attributes,"WEIGHTS_0");if(posIndex<0)return false;
+    MRGltfAccessor pos=mr_gltf2_accessor(doc,posIndex),normal=mr_gltf2_accessor(doc,normalIndex),uv=mr_gltf2_accessor(doc,uvIndex),uv2=mr_gltf2_accessor(doc,uv2Index),tangent=mr_gltf2_accessor(doc,tangentIndex),color=mr_gltf2_accessor(doc,colorIndex),joints=mr_gltf2_accessor(doc,jointsIndex),weights=mr_gltf2_accessor(doc,weightsIndex);if(!pos.data||pos.componentType!=5126||pos.components!=3)return false;
+    int indexToken=mr_json_get(doc->json,doc->tokens,doc->tokenCount,primitive,"indices");MRGltfAccessor indices=indexToken>=0?mr_gltf2_accessor(doc,mr_json_int(doc->json,doc->tokens[indexToken])):(MRGltfAccessor){0};int elementCount=indices.data?indices.count:pos.count;if(elementCount<3)return false;
+    mesh->vertexCount=pos.count;mesh->triangleCount=elementCount/3;mesh->vertices=MemAlloc((unsigned int)mesh->vertexCount*3*sizeof(float));
+    if(normal.data&&normal.components>=3)mesh->normals=MemAlloc((unsigned int)mesh->vertexCount*3*sizeof(float));if(uv.data&&uv.components>=2)mesh->texcoords=MemAlloc((unsigned int)mesh->vertexCount*2*sizeof(float));if(uv2.data&&uv2.components>=2)mesh->texcoords2=MemAlloc((unsigned int)mesh->vertexCount*2*sizeof(float));if(tangent.data&&tangent.components>=4)mesh->tangents=MemAlloc((unsigned int)mesh->vertexCount*4*sizeof(float));if(color.data&&(color.components==3||color.components==4))mesh->colors=MemAlloc((unsigned int)mesh->vertexCount*4);if(joints.data&&joints.components==4)mesh->boneIds=MemAlloc((unsigned int)mesh->vertexCount*4);if(weights.data&&weights.components==4)mesh->boneWeights=MemAlloc((unsigned int)mesh->vertexCount*4*sizeof(float));if(indices.data)mesh->indices=MemAlloc((unsigned int)mesh->triangleCount*3*sizeof(unsigned short));
+    if(!mesh->vertices||(normal.data&&!mesh->normals)||(uv.data&&!mesh->texcoords)||(indices.data&&!mesh->indices)){UnloadMesh(*mesh);*mesh=(Mesh){0};return false;}
+    for(int i=0;i<mesh->vertexCount;i++){float v[4]={0,0,0,1};mr_gltf2_read(pos,i,v,3);Vector3 p=mr_v3_transform((Vector3){v[0],v[1],v[2]},world);mesh->vertices[i*3]=p.x;mesh->vertices[i*3+1]=p.y;mesh->vertices[i*3+2]=p.z;
+        if(mesh->normals){mr_gltf2_read(normal,i,v,3);Vector3 n=mr_transform_normal((Vector3){v[0],v[1],v[2]},world);mesh->normals[i*3]=n.x;mesh->normals[i*3+1]=n.y;mesh->normals[i*3+2]=n.z;}
+        if(mesh->texcoords){mr_gltf2_read(uv,i,v,2);mesh->texcoords[i*2]=v[0];mesh->texcoords[i*2+1]=v[1];}if(mesh->texcoords2){mr_gltf2_read(uv2,i,v,2);mesh->texcoords2[i*2]=v[0];mesh->texcoords2[i*2+1]=v[1];}
+        if(mesh->tangents){mr_gltf2_read(tangent,i,v,4);Vector3 n=mr_transform_direction((Vector3){v[0],v[1],v[2]},world);mesh->tangents[i*4]=n.x;mesh->tangents[i*4+1]=n.y;mesh->tangents[i*4+2]=n.z;mesh->tangents[i*4+3]=v[3];}
+        if(mesh->colors){mr_gltf2_read(color,i,v,color.components);for(int c=0;c<4;c++){float x=c<color.components?v[c]:1;if(!color.normalized&&color.componentType!=5126)x/=color.componentType==5121?255.0f:65535.0f;if(x<0)x=0;if(x>1)x=1;mesh->colors[i*4+c]=(unsigned char)(x*255+0.5f);}}
+        if(mesh->boneIds){mr_gltf2_read(joints,i,v,4);for(int c=0;c<4;c++){int id=(int)v[c];mesh->boneIds[i*4+c]=(unsigned char)(id>255?255:id<0?0:id);}}if(mesh->boneWeights){mr_gltf2_read(weights,i,v,4);for(int c=0;c<4;c++)mesh->boneWeights[i*4+c]=v[c];}
+    }
+    if(mesh->indices)for(int i=0;i<mesh->triangleCount*3;i++){unsigned int index=mr_gltf_index(indices.data+i*indices.stride,indices.componentType);if(index>65535||index>=(unsigned int)mesh->vertexCount){UnloadMesh(*mesh);*mesh=(Mesh){0};return false;}mesh->indices[i]=(unsigned short)index;}
+    if(mesh->boneIds&&mesh->boneWeights){mesh->animVertices=MemAlloc((unsigned int)mesh->vertexCount*3*sizeof(float));if(mesh->animVertices)memcpy(mesh->animVertices,mesh->vertices,(size_t)mesh->vertexCount*3*sizeof(float));if(mesh->normals){mesh->animNormals=MemAlloc((unsigned int)mesh->vertexCount*3*sizeof(float));if(mesh->animNormals)memcpy(mesh->animNormals,mesh->normals,(size_t)mesh->vertexCount*3*sizeof(float));}}
+    int material=mr_json_get(doc->json,doc->tokens,doc->tokenCount,primitive,"material");*materialId=material>=0?mr_json_int(doc->json,doc->tokens[material])+1:0;UploadMesh(mesh,false);return true;
+}
+static void mr_gltf_load_skin(MRGltfDoc *doc,Model *model){
+    int skins=mr_json_get(doc->json,doc->tokens,doc->tokenCount,0,"skins"),skin=mr_json_at(doc->tokens,doc->tokenCount,skins,0),joints=mr_json_get(doc->json,doc->tokens,doc->tokenCount,skin,"joints");int count=mr_json_count(doc->tokens,doc->tokenCount,joints);if(count<=0)return;
+    model->boneCount=count;model->bones=MemAlloc((unsigned int)count*sizeof(BoneInfo));model->bindPose=MemAlloc((unsigned int)count*sizeof(Transform));if(!model->bones||!model->bindPose){MemFree(model->bones);MemFree(model->bindPose);model->bones=NULL;model->bindPose=NULL;model->boneCount=0;return;}memset(model->bones,0,(size_t)count*sizeof(BoneInfo));
+    int nodes=mr_json_get(doc->json,doc->tokens,doc->tokenCount,0,"nodes");for(int i=0;i<count;i++){int jt=mr_json_at(doc->tokens,doc->tokenCount,joints,i),nodeIndex=mr_json_int(doc->json,doc->tokens[jt]),node=mr_json_at(doc->tokens,doc->tokenCount,nodes,nodeIndex),name=mr_json_get(doc->json,doc->tokens,doc->tokenCount,node,"name");if(name>=0)mr_token_text(doc->json,doc->tokens[name],model->bones[i].name,sizeof model->bones[i].name);model->bones[i].parent=-1;int parent=mr_gltf_parent(doc,nodeIndex);for(int j=0;j<count;j++){int other=mr_json_at(doc->tokens,doc->tokenCount,joints,j);if(other>=0&&mr_json_int(doc->json,doc->tokens[other])==parent){model->bones[i].parent=j;break;}}model->bindPose[i]=mr_matrix_decompose(mr_gltf_world(doc,nodeIndex));}
+    for(int i=0;i<model->meshCount;i++)if(model->meshes[i].boneIds&&model->meshes[i].boneWeights){model->meshes[i].boneCount=count;model->meshes[i].boneMatrices=MemAlloc((unsigned int)count*sizeof(Matrix));if(model->meshes[i].boneMatrices)for(int j=0;j<count;j++)model->meshes[i].boneMatrices[j]=mr_matrix_identity();}
+}
+Model LoadModel(const char *fileName){
+    Model model={0};MRGltfDoc doc;if(!mr_gltf_open(fileName,&doc)){puts("raygpu: could not load glTF 2.0 model");return model;}int nodes=mr_json_get(doc.json,doc.tokens,doc.tokenCount,0,"nodes"),nodeCount=mr_json_count(doc.tokens,doc.tokenCount,nodes),meshes=mr_json_get(doc.json,doc.tokens,doc.tokenCount,0,"meshes"),meshCount=mr_json_count(doc.tokens,doc.tokenCount,meshes),primitiveCount=0;
+    if(nodeCount>0){for(int i=0;i<nodeCount;i++){int node=mr_json_at(doc.tokens,doc.tokenCount,nodes,i),meshToken=mr_json_get(doc.json,doc.tokens,doc.tokenCount,node,"mesh");if(meshToken<0)continue;int mesh=mr_json_at(doc.tokens,doc.tokenCount,meshes,mr_json_int(doc.json,doc.tokens[meshToken])),primitives=mr_json_get(doc.json,doc.tokens,doc.tokenCount,mesh,"primitives"),n=mr_json_count(doc.tokens,doc.tokenCount,primitives);for(int p=0;p<n;p++){int primitive=mr_json_at(doc.tokens,doc.tokenCount,primitives,p),mode=mr_json_get(doc.json,doc.tokens,doc.tokenCount,primitive,"mode");if(mode<0||mr_json_int(doc.json,doc.tokens[mode])==4)primitiveCount++;}}}
+    else for(int i=0;i<meshCount;i++){int mesh=mr_json_at(doc.tokens,doc.tokenCount,meshes,i),primitives=mr_json_get(doc.json,doc.tokens,doc.tokenCount,mesh,"primitives");primitiveCount+=mr_json_count(doc.tokens,doc.tokenCount,primitives);}if(primitiveCount<=0){mr_gltf_close(&doc);return model;}
+    int materials=mr_json_get(doc.json,doc.tokens,doc.tokenCount,0,"materials"),sourceMaterials=mr_json_count(doc.tokens,doc.tokenCount,materials);model.transform=mr_matrix_identity();model.meshCount=primitiveCount;model.materialCount=sourceMaterials+1;model.meshes=MemAlloc((unsigned int)primitiveCount*sizeof(Mesh));model.meshMaterial=MemAlloc((unsigned int)primitiveCount*sizeof(int));model.materials=MemAlloc((unsigned int)model.materialCount*sizeof(Material));if(!model.meshes||!model.meshMaterial||!model.materials){mr_gltf_close(&doc);UnloadModel(model);return(Model){0};}memset(model.meshes,0,(size_t)primitiveCount*sizeof(Mesh));memset(model.meshMaterial,0,(size_t)primitiveCount*sizeof(int));for(int i=0;i<model.materialCount;i++)model.materials[i]=LoadMaterialDefault();for(int i=0;i<sourceMaterials;i++)mr_gltf_material(&doc,mr_json_at(doc.tokens,doc.tokenCount,materials,i),&model.materials[i+1]);
+    int output=0;if(nodeCount>0){for(int i=0;i<nodeCount;i++){int node=mr_json_at(doc.tokens,doc.tokenCount,nodes,i),meshToken=mr_json_get(doc.json,doc.tokens,doc.tokenCount,node,"mesh");if(meshToken<0)continue;int mesh=mr_json_at(doc.tokens,doc.tokenCount,meshes,mr_json_int(doc.json,doc.tokens[meshToken])),primitives=mr_json_get(doc.json,doc.tokens,doc.tokenCount,mesh,"primitives"),n=mr_json_count(doc.tokens,doc.tokenCount,primitives);Matrix world=mr_gltf_world(&doc,i);for(int p=0;p<n;p++){int primitive=mr_json_at(doc.tokens,doc.tokenCount,primitives,p),mode=mr_json_get(doc.json,doc.tokens,doc.tokenCount,primitive,"mode");if(mode>=0&&mr_json_int(doc.json,doc.tokens[mode])!=4)continue;if(output<primitiveCount){mr_gltf_load_primitive(&doc,primitive,world,&model.meshes[output],&model.meshMaterial[output]);output++;}}}}
+    else for(int i=0;i<meshCount;i++){int mesh=mr_json_at(doc.tokens,doc.tokenCount,meshes,i),primitives=mr_json_get(doc.json,doc.tokens,doc.tokenCount,mesh,"primitives"),n=mr_json_count(doc.tokens,doc.tokenCount,primitives);for(int p=0;p<n&&output<primitiveCount;p++){mr_gltf_load_primitive(&doc,mr_json_at(doc.tokens,doc.tokenCount,primitives,p),mr_matrix_identity(),&model.meshes[output],&model.meshMaterial[output]);output++;}}
+    mr_gltf_load_skin(&doc,&model);mr_gltf_close(&doc);if(!IsModelValid(model)){UnloadModel(model);return(Model){0};}return model;
+}
+static Quaternion mr_quaternion_normalize(Quaternion q){float n=sqrtf(q.x*q.x+q.y*q.y+q.z*q.z+q.w*q.w);return n>0?(Quaternion){q.x/n,q.y/n,q.z/n,q.w/n}:(Quaternion){0,0,0,1};}
+static Quaternion mr_quaternion_slerp(Quaternion a,Quaternion b,float t){a=mr_quaternion_normalize(a);b=mr_quaternion_normalize(b);float dot=a.x*b.x+a.y*b.y+a.z*b.z+a.w*b.w;if(dot<0)b=(Quaternion){-b.x,-b.y,-b.z,-b.w};return mr_quaternion_normalize((Quaternion){a.x+(b.x-a.x)*t,a.y+(b.y-a.y)*t,a.z+(b.z-a.z)*t,a.w+(b.w-a.w)*t});}
+static void mr_gltf_sample(MRGltfDoc *doc,int sampler,float time,float *result,int components,bool rotation){
+    int inputToken=mr_json_get(doc->json,doc->tokens,doc->tokenCount,sampler,"input"),outputToken=mr_json_get(doc->json,doc->tokens,doc->tokenCount,sampler,"output"),interpolation=mr_json_get(doc->json,doc->tokens,doc->tokenCount,sampler,"interpolation");if(inputToken<0||outputToken<0)return;MRGltfAccessor input=mr_gltf2_accessor(doc,mr_json_int(doc->json,doc->tokens[inputToken])),output=mr_gltf2_accessor(doc,mr_json_int(doc->json,doc->tokens[outputToken]));if(!input.data||!output.data||input.count<=0)return;
+    int key=0;float t0=0,t1=0;mr_gltf2_read(input,0,&t0,1);if(time<=t0){mr_gltf2_read(output,interpolation>=0&&mr_json_equal(doc->json,doc->tokens[interpolation],"CUBICSPLINE")?1:0,result,components);return;}for(int i=0;i<input.count-1;i++){mr_gltf2_read(input,i,&t0,1);mr_gltf2_read(input,i+1,&t1,1);key=i;if(time<t1)break;key=i+1;}if(key>=input.count-1){int index=input.count-1;if(interpolation>=0&&mr_json_equal(doc->json,doc->tokens[interpolation],"CUBICSPLINE"))index=index*3+1;mr_gltf2_read(output,index,result,components);return;}
+    mr_gltf2_read(input,key,&t0,1);mr_gltf2_read(input,key+1,&t1,1);float f=t1>t0?(time-t0)/(t1-t0):0;if(f<0)f=0;if(f>1)f=1;bool step=interpolation>=0&&mr_json_equal(doc->json,doc->tokens[interpolation],"STEP"),cubic=interpolation>=0&&mr_json_equal(doc->json,doc->tokens[interpolation],"CUBICSPLINE");float a[4]={0},b[4]={0};
+    if(step){mr_gltf2_read(output,key,result,components);return;}if(cubic){float outTangent[4]={0},inTangent[4]={0};mr_gltf2_read(output,key*3+1,a,components);mr_gltf2_read(output,key*3+2,outTangent,components);mr_gltf2_read(output,(key+1)*3,b,components);mr_gltf2_read(output,(key+1)*3+1,inTangent,components);float f2=f*f,f3=f2*f,duration=t1-t0;for(int c=0;c<components;c++)result[c]=(2*f3-3*f2+1)*a[c]+(f3-2*f2+f)*outTangent[c]*duration+(-2*f3+3*f2)*b[c]+(f3-f2)*inTangent[c]*duration;if(rotation){Quaternion q=mr_quaternion_normalize(*(Quaternion*)result);memcpy(result,&q,sizeof q);}return;}
+    mr_gltf2_read(output,key,a,components);mr_gltf2_read(output,key+1,b,components);if(rotation){Quaternion q=mr_quaternion_slerp(*(Quaternion*)a,*(Quaternion*)b,f);memcpy(result,&q,sizeof q);}else for(int c=0;c<components;c++)result[c]=a[c]+(b[c]-a[c])*f;
+}
+static void mr_build_pose_world(BoneInfo *bones,int count,Transform *pose){for(int i=0;i<count;i++)if(bones[i].parent>=0&&bones[i].parent<i){Matrix parent=mr_gltf_trs(pose[bones[i].parent].translation,pose[bones[i].parent].rotation,pose[bones[i].parent].scale),local=mr_gltf_trs(pose[i].translation,pose[i].rotation,pose[i].scale);pose[i]=mr_matrix_decompose(mr_matrix_multiply(parent,local));}}
+ModelAnimation *LoadModelAnimations(const char *fileName,int *animCount){
+    if(animCount)*animCount=0;MRGltfDoc doc;if(!mr_gltf_open(fileName,&doc))return NULL;int skins=mr_json_get(doc.json,doc.tokens,doc.tokenCount,0,"skins"),skin=mr_json_at(doc.tokens,doc.tokenCount,skins,0),joints=mr_json_get(doc.json,doc.tokens,doc.tokenCount,skin,"joints"),boneCount=mr_json_count(doc.tokens,doc.tokenCount,joints),animationsToken=mr_json_get(doc.json,doc.tokens,doc.tokenCount,0,"animations"),count=mr_json_count(doc.tokens,doc.tokenCount,animationsToken);if(boneCount<=0||count<=0){mr_gltf_close(&doc);return NULL;}ModelAnimation *animations=MemAlloc((unsigned int)count*sizeof(ModelAnimation));if(!animations){mr_gltf_close(&doc);return NULL;}memset(animations,0,(size_t)count*sizeof(ModelAnimation));int nodes=mr_json_get(doc.json,doc.tokens,doc.tokenCount,0,"nodes");
+    for(int a=0;a<count;a++){ModelAnimation *anim=&animations[a];anim->boneCount=boneCount;anim->bones=MemAlloc((unsigned int)boneCount*sizeof(BoneInfo));if(!anim->bones)continue;memset(anim->bones,0,(size_t)boneCount*sizeof(BoneInfo));int animation=mr_json_at(doc.tokens,doc.tokenCount,animationsToken,a),name=mr_json_get(doc.json,doc.tokens,doc.tokenCount,animation,"name"),samplers=mr_json_get(doc.json,doc.tokens,doc.tokenCount,animation,"samplers"),channels=mr_json_get(doc.json,doc.tokens,doc.tokenCount,animation,"channels"),channelCount=mr_json_count(doc.tokens,doc.tokenCount,channels);if(name>=0)mr_token_text(doc.json,doc.tokens[name],anim->name,sizeof anim->name);
+        int *jointNodes=MemAlloc((unsigned int)boneCount*sizeof(int)),*translation=MemAlloc((unsigned int)boneCount*sizeof(int)),*rotation=MemAlloc((unsigned int)boneCount*sizeof(int)),*scale=MemAlloc((unsigned int)boneCount*sizeof(int));if(!jointNodes||!translation||!rotation||!scale){MemFree(jointNodes);MemFree(translation);MemFree(rotation);MemFree(scale);continue;}for(int i=0;i<boneCount;i++){int jt=mr_json_at(doc.tokens,doc.tokenCount,joints,i);jointNodes[i]=mr_json_int(doc.json,doc.tokens[jt]);translation[i]=rotation[i]=scale[i]=-1;int node=mr_json_at(doc.tokens,doc.tokenCount,nodes,jointNodes[i]),boneName=mr_json_get(doc.json,doc.tokens,doc.tokenCount,node,"name");if(boneName>=0)mr_token_text(doc.json,doc.tokens[boneName],anim->bones[i].name,sizeof anim->bones[i].name);anim->bones[i].parent=-1;int parent=mr_gltf_parent(&doc,jointNodes[i]);for(int j=0;j<boneCount;j++){int other=mr_json_at(doc.tokens,doc.tokenCount,joints,j);if(other>=0&&mr_json_int(doc.json,doc.tokens[other])==parent){anim->bones[i].parent=j;break;}}}
+        float duration=0;for(int c=0;c<channelCount;c++){int channel=mr_json_at(doc.tokens,doc.tokenCount,channels,c),samplerIndex=mr_json_get(doc.json,doc.tokens,doc.tokenCount,channel,"sampler"),target=mr_json_get(doc.json,doc.tokens,doc.tokenCount,channel,"target"),nodeToken=mr_json_get(doc.json,doc.tokens,doc.tokenCount,target,"node"),path=mr_json_get(doc.json,doc.tokens,doc.tokenCount,target,"path");if(samplerIndex<0||nodeToken<0||path<0)continue;int bone=-1,nodeIndex=mr_json_int(doc.json,doc.tokens[nodeToken]);for(int i=0;i<boneCount;i++)if(jointNodes[i]==nodeIndex){bone=i;break;}if(bone<0)continue;int sampler=mr_json_at(doc.tokens,doc.tokenCount,samplers,mr_json_int(doc.json,doc.tokens[samplerIndex]));if(mr_json_equal(doc.json,doc.tokens[path],"translation"))translation[bone]=sampler;else if(mr_json_equal(doc.json,doc.tokens[path],"rotation"))rotation[bone]=sampler;else if(mr_json_equal(doc.json,doc.tokens[path],"scale"))scale[bone]=sampler;int inputToken=mr_json_get(doc.json,doc.tokens,doc.tokenCount,sampler,"input");if(inputToken>=0){MRGltfAccessor input=mr_gltf2_accessor(&doc,mr_json_int(doc.json,doc.tokens[inputToken]));float end=0;if(input.count>0)mr_gltf2_read(input,input.count-1,&end,1);if(end>duration)duration=end;}}
+        anim->frameCount=(int)(duration*1000.0f/17.0f)+1;if(anim->frameCount<1)anim->frameCount=1;anim->framePoses=MemAlloc((unsigned int)anim->frameCount*sizeof(Transform*));if(!anim->framePoses){anim->frameCount=0;MemFree(jointNodes);MemFree(translation);MemFree(rotation);MemFree(scale);continue;}memset(anim->framePoses,0,(size_t)anim->frameCount*sizeof(Transform*));
+        for(int frame=0;frame<anim->frameCount;frame++){anim->framePoses[frame]=MemAlloc((unsigned int)boneCount*sizeof(Transform));if(!anim->framePoses[frame])continue;float time=frame*0.017f;for(int b=0;b<boneCount;b++){int node=mr_json_at(doc.tokens,doc.tokenCount,nodes,jointNodes[b]);Transform pose=mr_gltf_node_transform(&doc,node);if(translation[b]>=0)mr_gltf_sample(&doc,translation[b],time,(float*)&pose.translation,3,false);if(rotation[b]>=0)mr_gltf_sample(&doc,rotation[b],time,(float*)&pose.rotation,4,true);if(scale[b]>=0)mr_gltf_sample(&doc,scale[b],time,(float*)&pose.scale,3,false);anim->framePoses[frame][b]=pose;}mr_build_pose_world(anim->bones,boneCount,anim->framePoses[frame]);}
+        MemFree(jointNodes);MemFree(translation);MemFree(rotation);MemFree(scale);
+    }mr_gltf_close(&doc);if(animCount)*animCount=count;return animations;
+}
+static Matrix mr_matrix_affine_inverse(Matrix m){
+    float a=m.m0,b=m.m4,c=m.m8,d=m.m1,e=m.m5,f=m.m9,g=m.m2,h=m.m6,i=m.m10,det=a*(e*i-f*h)-b*(d*i-f*g)+c*(d*h-e*g);if(det>-0.000001f&&det<0.000001f)return mr_matrix_identity();float q=1/det;Matrix r=mr_matrix_identity();r.m0=(e*i-f*h)*q;r.m4=(c*h-b*i)*q;r.m8=(b*f-c*e)*q;r.m1=(f*g-d*i)*q;r.m5=(a*i-c*g)*q;r.m9=(c*d-a*f)*q;r.m2=(d*h-e*g)*q;r.m6=(b*g-a*h)*q;r.m10=(a*e-b*d)*q;r.m12=-(r.m0*m.m12+r.m4*m.m13+r.m8*m.m14);r.m13=-(r.m1*m.m12+r.m5*m.m13+r.m9*m.m14);r.m14=-(r.m2*m.m12+r.m6*m.m13+r.m10*m.m14);return r;
+}
+void UpdateModelAnimationBones(Model model,ModelAnimation anim,int frame){if(!IsModelAnimationValid(model,anim)||anim.frameCount<=0||!anim.framePoses)return;if(frame<0)frame=0;frame%=anim.frameCount;for(int m=0;m<model.meshCount;m++)if(model.meshes[m].boneMatrices)for(int b=0;b<model.boneCount;b++){Matrix bind=mr_gltf_trs(model.bindPose[b].translation,model.bindPose[b].rotation,model.bindPose[b].scale),pose=mr_gltf_trs(anim.framePoses[frame][b].translation,anim.framePoses[frame][b].rotation,anim.framePoses[frame][b].scale);model.meshes[m].boneMatrices[b]=mr_matrix_multiply(pose,mr_matrix_affine_inverse(bind));}}
+void UpdateModelAnimation(Model model,ModelAnimation anim,int frame){UpdateModelAnimationBones(model,anim,frame);for(int m=0;m<model.meshCount;m++){Mesh mesh=model.meshes[m];if(!mesh.animVertices||!mesh.boneIds||!mesh.boneWeights||!mesh.boneMatrices)continue;for(int v=0;v<mesh.vertexCount;v++){Vector3 source={mesh.vertices[v*3],mesh.vertices[v*3+1],mesh.vertices[v*3+2]},normal=mesh.normals?(Vector3){mesh.normals[v*3],mesh.normals[v*3+1],mesh.normals[v*3+2]}:(Vector3){0};Vector3 result={0},normalResult={0};float total=0;for(int j=0;j<4;j++){float weight=mesh.boneWeights[v*4+j];int bone=mesh.boneIds[v*4+j];if(weight<=0||bone<0||bone>=mesh.boneCount)continue;Vector3 p=mr_v3_transform(source,mesh.boneMatrices[bone]),n=mr_transform_direction(normal,mesh.boneMatrices[bone]);result=mr_v3_add(result,mr_v3_scale(p,weight));normalResult=mr_v3_add(normalResult,mr_v3_scale(n,weight));total+=weight;}if(total<=0){result=source;normalResult=normal;}mesh.animVertices[v*3]=result.x;mesh.animVertices[v*3+1]=result.y;mesh.animVertices[v*3+2]=result.z;if(mesh.animNormals){normalResult=mr_v3_norm(normalResult);mesh.animNormals[v*3]=normalResult.x;mesh.animNormals[v*3+1]=normalResult.y;mesh.animNormals[v*3+2]=normalResult.z;}}}}
+void UnloadModelAnimation(ModelAnimation anim){if(anim.framePoses)for(int i=0;i<anim.frameCount;i++)MemFree(anim.framePoses[i]);MemFree(anim.framePoses);MemFree(anim.bones);}
+void UnloadModelAnimations(ModelAnimation *animations,int animCount){if(animations)for(int i=0;i<animCount;i++)UnloadModelAnimation(animations[i]);MemFree(animations);}
+bool IsModelAnimationValid(Model model,ModelAnimation anim){if(model.boneCount<=0||model.boneCount!=anim.boneCount||!model.bones||!anim.bones)return false;for(int i=0;i<model.boneCount;i++)if(model.bones[i].parent!=anim.bones[i].parent)return false;return true;}
 static void mr_triangle_colors(Vector2 a,Vector2 b,Vector2 c,Vector2 uvA,Vector2 uvB,Vector2 uvC,
     Color colorA,Color colorB,Color colorC,unsigned int texture) {
     if (!mr.drawing || mr.targetWidth<=0 || mr.targetHeight<=0) return;
@@ -14978,7 +15465,7 @@ static void mr_triangle_colors(Vector2 a,Vector2 b,Vector2 c,Vector2 uvA,Vector2
     if (mr.camera2dActive) for (int i=0;i<3;i++) p[i]=GetWorldToScreen2D(p[i],mr.camera2d);
     for (int i=0;i<3;i++) mr.vertices[mr.vertexCount++]=(MRVertex){
         2*p[i].x/mr.targetWidth-1,1-2*p[i].y/mr.targetHeight,uv[i].x,uv[i].y,
-        colors[i].r,colors[i].g,colors[i].b,colors[i].a};
+        0.0f,colors[i].r,colors[i].g,colors[i].b,colors[i].a};
 }
 static void mr_triangle(Vector2 a,Vector2 b,Vector2 c,Vector2 uvA,Vector2 uvB,Vector2 uvC,Color color,unsigned int texture) {
     mr_triangle_colors(a,b,c,uvA,uvB,uvC,color,color,color,texture);
@@ -15632,7 +16119,8 @@ static void mr_render_texture_pass(MRTexture *target,int width,int height) {
     WGPURenderPassColorAttachment attachment={0}; attachment.depthSlice=(uint32_t)-1; attachment.view=target->view;
     attachment.loadOp=WGPULoadOp_Clear; attachment.storeOp=WGPUStoreOp_Store;
     attachment.clearValue=(WGPUColor){mr.clear.r/255.0,mr.clear.g/255.0,mr.clear.b/255.0,mr.clear.a/255.0};
-    WGPURenderPassDescriptor desc=WGPU_RENDER_PASS_DESCRIPTOR_INIT; desc.colorAttachmentCount=1; desc.colorAttachments=&attachment;
+    WGPURenderPassDepthStencilAttachment depth=WGPU_RENDER_PASS_DEPTH_STENCIL_ATTACHMENT_INIT;depth.view=target->depthView;depth.depthLoadOp=WGPULoadOp_Clear;depth.depthStoreOp=WGPUStoreOp_Store;depth.depthClearValue=1.0f;depth.stencilLoadOp=WGPULoadOp_Undefined;depth.stencilStoreOp=WGPUStoreOp_Undefined;
+    WGPURenderPassDescriptor desc=WGPU_RENDER_PASS_DESCRIPTOR_INIT; desc.colorAttachmentCount=1; desc.colorAttachments=&attachment;desc.depthStencilAttachment=&depth;
     WGPURenderPassEncoder pass=wgpuCommandEncoderBeginRenderPass(encoder,&desc);
     if (mr.vertexCount) {
         wgpuQueueWriteBuffer(mr.queue,mr.buffer,0,mr.vertices,mr.vertexCount*sizeof(MRVertex));
@@ -15666,6 +16154,7 @@ void EndDrawing(void) {
             mr.config.width=(uint32_t)mr.width; mr.config.height=(uint32_t)mr.height;
             wgpuSurfaceConfigure(mr.surface,&mr.config);
         }
+        if(!mr_resize_depth(mr.width,mr.height)){mr_error("Could not create depth buffer");return;}
         WGPUSurfaceTexture surface=WGPU_SURFACE_TEXTURE_INIT;
         wgpuSurfaceGetCurrentTexture(mr.surface,&surface);
         if (surface.status==WGPUSurfaceGetCurrentTextureStatus_SuccessOptimal || surface.status==WGPUSurfaceGetCurrentTextureStatus_SuccessSuboptimal) {
@@ -15675,7 +16164,8 @@ void EndDrawing(void) {
             attachment.depthSlice=(uint32_t)-1;
             attachment.view=view; attachment.loadOp=WGPULoadOp_Clear; attachment.storeOp=WGPUStoreOp_Store;
             attachment.clearValue=(WGPUColor){mr.clear.r/255.0,mr.clear.g/255.0,mr.clear.b/255.0,mr.clear.a/255.0};
-            WGPURenderPassDescriptor desc=WGPU_RENDER_PASS_DESCRIPTOR_INIT; desc.colorAttachmentCount=1; desc.colorAttachments=&attachment;
+            WGPURenderPassDepthStencilAttachment depth=WGPU_RENDER_PASS_DEPTH_STENCIL_ATTACHMENT_INIT;depth.view=mr.depthView;depth.depthLoadOp=WGPULoadOp_Clear;depth.depthStoreOp=WGPUStoreOp_Store;depth.depthClearValue=1.0f;depth.stencilLoadOp=WGPULoadOp_Undefined;depth.stencilStoreOp=WGPUStoreOp_Undefined;
+            WGPURenderPassDescriptor desc=WGPU_RENDER_PASS_DESCRIPTOR_INIT; desc.colorAttachmentCount=1; desc.colorAttachments=&attachment;desc.depthStencilAttachment=&depth;
             WGPURenderPassEncoder pass=wgpuCommandEncoderBeginRenderPass(encoder,&desc);
             if (mr.vertexCount) {
                 wgpuQueueWriteBuffer(mr.queue,mr.buffer,0,mr.vertices,mr.vertexCount*sizeof(MRVertex));
@@ -15719,6 +16209,8 @@ void CloseWindow(void) {
     for (int i=0;i<MR_MAX_TEXTURES;i++) if (mr.textures[i].id) UnloadTexture((Texture2D){mr.textures[i].id,0,0,0,0});
     for (int i=0;i<32;i++) if (mr.shaders[i].id) UnloadShader((Shader){mr.shaders[i].id,NULL});
     if (mr.buffer) wgpuBufferRelease(mr.buffer);
+    if (mr.depthView) wgpuTextureViewRelease(mr.depthView);
+    if (mr.depthTexture) wgpuTextureRelease(mr.depthTexture);
     for (int i=0;i<6;i++) if (mr.pipelines[i]) wgpuRenderPipelineRelease(mr.pipelines[i]);
     if (mr.sampler) wgpuSamplerRelease(mr.sampler);
     if (mr.textureLayout) wgpuBindGroupLayoutRelease(mr.textureLayout);
@@ -15732,7 +16224,7 @@ void CloseWindow(void) {
     if (mr.window) DestroyWindow(mr.window);
     mr.window=NULL;
 #endif
-    mr.buffer=NULL; memset(mr.pipelines,0,sizeof mr.pipelines); mr.sampler=NULL; mr.textureLayout=NULL;mr.uniformLayout=NULL; mr.queue=NULL;
+    mr.buffer=NULL;mr.depthView=NULL;mr.depthTexture=NULL;memset(mr.pipelines,0,sizeof mr.pipelines); mr.sampler=NULL; mr.textureLayout=NULL;mr.uniformLayout=NULL; mr.queue=NULL;
     mr.device=NULL; mr.surface=NULL; mr.adapter=NULL; mr.instance=NULL;
 }
 #else

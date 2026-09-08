@@ -1,6 +1,6 @@
 # RayGPU
 
-RayGPU is an experimental, single-header 2D C library with a raylib-style API
+RayGPU is an experimental, single-header 2D/3D C library with a raylib-style API
 and a WebGPU renderer. The same C source can compile as a native Windows
 program or as freestanding WebAssembly for a browser.
 
@@ -8,9 +8,9 @@ The web build does **not** use Emscripten, WASI, Node.js, or a package manager.
 Native Windows rendering uses Dawn with D3D12. Browser rendering uses WebGPU
 through the small `raygpu.js` platform bridge.
 
-RayGPU currently matches 290 raylib function names. It is not yet a complete
-drop-in raylib replacement, and 3D, models, meshes, materials, VR, and stereo
-rendering are outside its current scope.
+RayGPU is not yet a complete drop-in raylib replacement. It includes meshes,
+models, glTF 2.0 materials, and basic skeletal animation, while advanced 3D
+rendering is still being built. VR and stereo rendering are outside its scope.
 
 ## Quick start
 
@@ -75,27 +75,37 @@ make clean    # Remove generated native and web files
 
 Stop the local server from its terminal with `Ctrl+C`.
 
-## Snake example
+## Example catalog
 
-[`examples/snake.c`](examples/snake.c) is a complete 1920x1080 Snake game made
-with RayGPU. It demonstrates shapes, gradients, custom fonts, procedural sound,
-keyboard input, timing, random values, collision logic, a 2D camera, render
-textures, scissor rectangles, blend modes, texture drawing, and an animated
-WGSL shader with uniforms.
+All examples are linked into one interactive 1920x1080 application. The
+catalog lives in [`examples/main.c`](examples/main.c), while each example keeps
+its implementation in a separate C file. Click a card or press its number to
+open it; press `Escape` or click `EXAMPLES` to return to the catalog and choose
+another.
 
-Run it natively:
+Run the native catalog:
 
 ```powershell
 cd examples
 make run
 ```
 
-Run the exact same source in a browser:
+Run the same catalog in a browser:
 
 ```powershell
 cd examples
 make server
 ```
+
+The catalog currently contains:
+
+- [`examples/snake.c`](examples/snake.c): a complete Snake game demonstrating
+  shapes, gradients, custom fonts, procedural sound, keyboard input, timing,
+  random values, collision logic, a 2D camera, render textures, scissor
+  rectangles, blend modes, texture drawing, and animated shader uniforms.
+- [`examples/basic_3d.c`](examples/basic_3d.c): the shared native/browser depth
+  buffer, perspective camera, 3D primitives, wireframes, grid drawing, and
+  mouse-ray box picking.
 
 Snake controls:
 
@@ -151,6 +161,17 @@ Opening `index.html` through a `file://` URL is not supported.
   queues, mouse buttons, position, delta, wheel, offset, and scaling.
 - Complete raylib 2D shapes, gradients, polygons, splines, 2D collisions, 2D
   cameras, and screen/world conversion.
+- Perspective and orthographic 3D cameras, depth buffering, screen/world rays,
+  world-to-screen projection, cubes, spheres, cylinders, planes, grids, 3D
+  lines/triangles, wireframes, and basic 3D collision queries.
+- Raylib-compatible `Mesh`, `Material`, and `Model` structures; mesh upload and
+  updates, solid/wire/point model drawing, instancing, mesh/model bounds, mesh
+  ray collisions, and plane/cube/sphere mesh generators.
+- Dependency-free glTF 2.0 (`.gltf` and `.glb`) loading with external, data-URI,
+  and embedded buffers/textures; flattened node transforms and instances;
+  positions, normals, tangents, two UV sets, vertex colors, and 8/16/32-bit
+  indices; metallic/roughness, normal, occlusion, and emissive material maps;
+  and one-armature skeletal animation with step, linear, and cubic channels.
 - PNG, JPEG, BMP, TGA, and first-frame GIF decoding from files or memory.
 - Image creation, copying, cropping, resizing, flipping, arbitrary rotation,
   alpha/color processing, palettes, blur, convolution, dithering, channel
@@ -183,6 +204,7 @@ Custom shaders use `vs` and `fs` as their entry points. Vertex inputs are:
 | 0 | `vec2f` | position |
 | 1 | `vec2f` | texture coordinates |
 | 2 | `vec4f` | RGBA8 vertex color |
+| 3 | `f32` | normalized depth; optional for custom vertex shaders |
 
 Texture shaders use group 0:
 
@@ -199,7 +221,28 @@ struct Uniforms { values: array<vec4f, 128> };
 ```
 
 Uniform location `n` starts at `uniforms.values[n*4]`, reserving 64 bytes for
-that location. See the shader in [`main.c`](main.c) or
+that location.
+
+For stable, validated names, declare each location in a WGSL comment:
+
+```wgsl
+// @raygpu_uniform tint 0
+// @raygpu_uniform time 1
+```
+
+Then ordinary raylib-style code resolves those declared names:
+
+```c
+int tintLoc = GetShaderLocation(shader, "tint");  // 0
+int timeLoc = GetShaderLocation(shader, "time");  // 1
+int typoLoc = GetShaderLocation(shader, "tiem");  // -1
+```
+
+Declarations can appear in either shader stage and do not depend on the order
+of `GetShaderLocation()` calls. If a shader contains no declarations, RayGPU
+keeps the earlier compatibility behavior and assigns locations in first-use
+order. New shaders should use declarations so misspellings are detected and C
+and WGSL stay synchronized. See the shader in [`main.c`](main.c) or
 [`examples/snake.c`](examples/snake.c) for complete examples.
 
 ## Remaining 2D work
@@ -216,10 +259,26 @@ that location. See the shader in [`main.c`](main.c) or
 - File saving, directory listing, URL opening, compression, Base64, hashes,
   logging callbacks, and automation events.
 
+## Remaining 3D work
+
+- Persistent GPU mesh buffers, mesh downloads, tangent generation, and the
+  remaining procedural mesh generators.
+- OBJ loading, retained node/scene hierarchies, sparse accessors, morph targets,
+  and compressed mesh extensions.
+- Lighting, fog, full PBR map shading, and additional samplers.
+- Textured 3D primitives, billboards, heightmaps, cubic maps, and skyboxes.
+- GPU skinning and support for multiple armatures.
+- The remaining mesh, model, and ray collision helpers.
+
 ## Current limits
 
 - Native rendering currently supports Windows through Dawn/D3D12.
 - Images and ordinary textures use RGBA8 internally.
+- Like raylib 5.5, glTF loading accepts triangle primitives, flattens node
+  transforms into mesh data, ignores scene selection, uses one armature and
+  four joints per vertex, and stores indices as 16-bit values. Morph targets,
+  sparse accessors, Draco/meshopt compression, and extended PBR materials are
+  not supported.
 - GIF loading currently returns only the first frame.
 - The built-in font contains a small ASCII subset; use a TTF/OTF font for wider
   Unicode coverage.

@@ -1,7 +1,7 @@
-/main.exe
+*.exe
 /build/
 /assets/
 *.obj
 *.pdb
 .vscode/
-/d3dcompiler_47.dll
+d3dcompiler_47.dll
