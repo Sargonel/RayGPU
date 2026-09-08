@@ -1,6 +1,5 @@
-/* RayGPU Snake: one source file for native Windows and the web. */
-#define RAYGPU_IMPLEMENTATION
-#include "../raygpu.h"
+/* Snake scene used by the single RayGPU example catalog. */
+#include "examples.h"
 
 #define SCREEN_WIDTH 1920
 #define SCREEN_HEIGHT 1080
@@ -174,7 +173,7 @@ static void DrawBoard(void)
     EndTextureMode();
 }
 
-static void GameFrame(void)
+void SnakeUpdate(void)
 {
     UpdateGame();
     DrawBoard();
@@ -216,18 +215,19 @@ static void GameFrame(void)
             GameText("GAME OVER", 795, 444, 54, RED);
             GameText("PRESS ENTER TO RESTART", 735, 530, 26, WHITE);
         }
+        DrawExampleBackButton();
     EndDrawing();
 }
 
-int main(void)
+void SnakeInit(void)
 {
-    InitWindow(SCREEN_WIDTH, SCREEN_HEIGHT, "RayGPU Snake");
-    if (!IsWindowReady()) return 1;
-    SetWindowMinSize(1280, 720);
+    SetWindowTitle("RayGPU Examples - Snake");
     SetRandomSeed((unsigned int)(GetTime()*1000000.0) + 0x51A9u);
 
     board = LoadRenderTexture(BOARD_WIDTH, BOARD_HEIGHT);
-    screenShader = LoadShaderFromMemory(NULL,
+    screenShader = LoadShaderFromMemory(0,
+        "// @raygpu_uniform tint 0\n"
+        "// @raygpu_uniform time 1\n"
         "struct V { @builtin(position) position: vec4f, @location(0) uv: vec2f, @location(1) color: vec4f };"
         "struct Uniforms { values: array<vec4f, 128> };"
         "@group(0) @binding(0) var smp: sampler; @group(0) @binding(1) var tex: texture_2d<f32>;"
@@ -239,14 +239,23 @@ int main(void)
     tintLocation = GetShaderLocation(screenShader, "tint");
     timeLocation = GetShaderLocation(screenShader, "time");
 
-    InitAudioDevice();
     eatSound = MakeTone(720.0f, 0.09f, 0.32f);
     crashSound = MakeTone(115.0f, 0.38f, 0.42f);
     SetSoundPan(eatSound, 0.55f);
     uiFont = LoadFont("assets/font.ttf");
 
     ResetGame();
-    SetTargetFPS(120);
-    RunMainLoop(GameFrame);
-    return RayGPUHadError() ? 1 : 0;
+}
+
+void SnakeShutdown(void)
+{
+    if (IsRenderTextureValid(board)) UnloadRenderTexture(board);
+    if (IsShaderValid(screenShader)) UnloadShader(screenShader);
+    if (IsSoundValid(eatSound)) UnloadSound(eatSound);
+    if (IsSoundValid(crashSound)) UnloadSound(crashSound);
+    if (IsFontValid(uiFont)) UnloadFont(uiFont);
+    board = (RenderTexture2D){0};
+    screenShader = (Shader){0};
+    eatSound = crashSound = (Sound){0};
+    uiFont = (Font){0};
 }

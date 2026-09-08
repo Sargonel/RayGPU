@@ -1,25 +1,30 @@
-# RayGPU examples
+# RayGPU example catalog
 
-## Snake
+The examples build together into one interactive application. `main.c` owns
+the window and catalog screen; every demo keeps its own state and drawing code
+in a separate C file.
 
-`snake.c` is a complete asset-free game. It uses generated shapes, procedural
-sound, keyboard input, timing, random values, collision logic, a 2D camera,
-render textures, scissor rectangles, blend modes, texture drawing, and a WGSL
-shader with animated uniforms.
+Current catalog entries:
 
-If `assets/font.ttf` exists, the game uses it for the interface. It falls back
-to RayGPU's built-in font when the file is absent.
+- `snake.c`: shapes, procedural sound, keyboard input, a 2D camera, render
+  textures, scissor rectangles, blend modes, and a custom WGSL shader.
+- `basic_3d.c`: perspective projection, depth buffering, solid and wireframe
+  primitives, a grid, mouse-ray picking, `.gltf`/`.glb` model loading, and
+  automatic playback when a model contains skeletal animation.
 
-Run it from the examples folder on Windows:
+Build and open the native catalog:
 
 ```powershell
 cd examples
 make run
 ```
 
-Run the same source in the browser:
+Build and open the same catalog in a browser:
 
 ```powershell
 cd examples
 make server
 ```
+
+Click a card or press its number to open an example. Press `Escape` or click
+`EXAMPLES` to return to the catalog without closing the application.
