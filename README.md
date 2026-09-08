@@ -1,124 +1,235 @@
 # RayGPU
 
-A small raylib-style 2D library using WebGPU. Write your game in **one C file**
-and compile that same file for Windows and the web.
+RayGPU is an experimental, single-header 2D C library with a raylib-style API
+and a WebGPU renderer. The same C source can compile as a native Windows
+program or as freestanding WebAssembly for a browser.
 
-**No Emscripten, WASI SDK, npm packages, GLFW, or SDL.**
-The web build needs only Clang and `wasm-ld`, both already installed here.
-Windows uses your existing Dawn library and the Windows SDK. A native WebGPU
-implementation is still necessary; this project is not dependency-free on Windows.
+The web build does **not** use Emscripten, WASI, Node.js, or a package manager.
+Native Windows rendering uses Dawn with D3D12. Browser rendering uses WebGPU
+through the small `raygpu.js` platform bridge.
 
-## Build and run
+RayGPU currently matches 290 raylib function names. It is not yet a complete
+drop-in raylib replacement, and 3D, models, meshes, materials, VR, and stereo
+rendering are outside its current scope.
 
-From this folder in PowerShell:
+## Quick start
 
-```powershell
-make run       # Compile main.c and run the native Windows app
-make serve     # Compile the same main.c to WASM and serve the web demo
-```
-
-Open **http://127.0.0.1:8000** after `make serve`. Stop the server with Ctrl+C.
-The server uses Windows' built-in PowerShell/.NET; no server package is needed.
-Use a browser with WebGPU enabled. Browser WebGPU requires HTTPS or localhost,
-so opening the HTML with `file://` will not work.
-
-Build without running:
-
-```powershell
-make native    # main.exe + d3dcompiler_47.dll
-make web       # build/web/index.html + raygpu.js + main.wasm
-```
-
-The native make target copies the installed Windows shader compiler beside the
-executable because Dawn searches there. It downloads nothing. Keep that DLL
-beside `main.exe`. Native builds use the optimized Dawn library generated at
-`build/dawn-release`; the Dawn source remains at `../dawn`. Paths are configurable:
-
-```powershell
-make native DAWN=../dawn DAWN_BUILD=build/dawn-release
-```
-
-## Your game
+Define `RAYGPU_IMPLEMENTATION` in exactly one C source file:
 
 ```c
 #define RAYGPU_IMPLEMENTATION
-#include "raygpu.c"
+#include "raygpu.h"
 
-static void UpdateDraw(void) {
+static void GameFrame(void)
+{
     BeginDrawing();
-    ClearBackground(BLACK);
-    DrawRectangle(40, 40, 120, 80, SKYBLUE);
-    DrawText("HELLO WEBGPU", 40, 150, 28, WHITE);
+        ClearBackground(RAYWHITE);
+        DrawText("Hello from RayGPU", 20, 20, 30, DARKBLUE);
+        DrawCircle(400, 225, 50, SKYBLUE);
     EndDrawing();
 }
 
-int main(void) {
-    InitWindow(800, 600, "My game");
+int main(void)
+{
+    InitWindow(800, 450, "RayGPU");
     if (!IsWindowReady()) return 1;
+
     SetTargetFPS(60);
-    RunMainLoop(UpdateDraw);
+    RunMainLoop(GameFrame);
     return RayGPUHadError() ? 1 : 0;
 }
 ```
 
-`RunMainLoop` calls your frame function until Escape or window close. It owns
-window and GPU cleanup. Call `CloseWindow()` to quit from a frame callback.
-Store persistent game state globally or in static variables: the browser returns
-from `main` before it calls the frame function. Do not put cleanup after
-`RunMainLoop` that your web frames still depend on.
+`RunMainLoop()` is required because native Windows uses a normal blocking loop,
+while the browser uses `requestAnimationFrame()`.
 
-Windows runs a normal loop with a precise frame limiter. At high target rates
-the final wait uses CPU time so Windows cannot round it down to 60 FPS. The browser uses
-`requestAnimationFrame`; blocking inside a `while` loop would prevent browser
-rendering and input. `SetTargetFPS` caps frames, while the browser's display
-refresh rate remains the upper limit. Requesting 120 FPS on a 60 Hz browser
-display therefore still presents at 60 FPS.
-`GetFrameTime()` is in seconds and caps long stalls at 0.1 seconds.
+## Requirements
 
-## Files and architecture
+Native Windows builds require:
 
-- `main.c`: the game, with no platform-specific branches.
-- `raygpu.h`: the single-header C library. Define `RAYGPU_IMPLEMENTATION` and
-  include it in exactly one C file.
-- `raygpu.js`: the browser platform bridge, using WebGPU directly.
-- `shell.html`: the canvas and script loader.
+- Clang with C17 support.
+- A Dawn source checkout at `../dawn`.
+- Dawn generated headers and libraries under `build/dawn-release`.
+- Windows 10 or newer with a D3D12-capable GPU.
 
-C owns game state, input state, shapes, text geometry, and ordered texture batches.
-Windows submits those batches through Dawn/D3D12. WebAssembly passes the same
-vertex and batch layouts to the JavaScript bridge. The browser API needs this
-bridge; WASM cannot call browser WebGPU directly.
+Web builds require:
 
-## Implemented scope
+- Clang with the `wasm32` target.
+- A browser with WebGPU support.
+- HTTPS when deployed. `localhost` is allowed for development.
 
-- The complete 66-function raylib shapes module: pixels, lines, sectors,
-  circles, ellipses, rings, rectangles, gradients, rounded rectangles,
-  polygons, splines, spline evaluation, and 2D collision queries.
-- Images and textures from PNG, JPEG, BMP, TGA, and GIF files or memory,
-  decoded to RGBA8 by an amalgamated stb_image implementation. Raw RGBA8
-  textures remain available through `LoadTextureRGBA`.
-- Image generation, copying, cropping, nearest/bilinear resizing, canvas
-  resizing, flipping, 90-degree rotation, alpha processing, color processing,
-  palettes, alpha borders, and basic CPU image drawing.
-- Full/source-rectangle/rotated texture drawing, complete and partial GPU
-  texture updates, bilinear/point/anisotropic filtering, and wrap modes.
-- A built-in 5x7 font, text measurement, UTF-8/codepoint conversion, string
-  helpers, `DrawText`, and `DrawFPS`.
-- Keyboard pressed/repeated/down/released/up states; mouse button states,
-  position, delta and wheel input; focus reset.
-- 2D camera drawing plus world/screen conversion and camera matrices.
-- Complete raylib color conversion and adjustment helpers.
-- Timing, random numbers and unique random sequences, plus portable memory
-  allocation for native and freestanding WebAssembly.
-- Native window resizing; the web canvas scales to the available page width.
-- Timing, frame limiting, resource cleanup, and GPU error reporting.
+The Dawn paths can be changed at the top of the root `makefile`. Dawn is only
+needed for native builds; browsers provide their own WebGPU implementation.
 
-This is an independent **2D library under active development**, not yet a full
-raylib drop-in replacement. 3D and VR are intentionally out of scope. Audio,
-custom fonts, shaders, render textures, gamepads, touch,
-gestures, and filesystem APIs are still being implemented.
-Textures take raw RGBA pixels; unload them outside a drawing frame. Texture
-scaling uses nearest filtering. The font covers A-Z, digits, spaces, newlines,
-and `: . - / + ? !`; lowercase maps to uppercase. The native backend is Windows
-D3D12 only. There are 256 texture slots (one reserved) and 262,144 vertices per
-frame; excess geometry is skipped with a message. Devices lost during execution
-stop the demo and require a restart.
+## Commands
+
+The root makefile exposes five commands:
+
+```powershell
+make native   # Build main.exe
+make web      # Build the static site in build/web
+make run      # Build and run main.exe
+make server   # Build web and serve http://localhost:8000
+make clean    # Remove generated native and web files
+```
+
+Stop the local server from its terminal with `Ctrl+C`.
+
+## Snake example
+
+[`examples/snake.c`](examples/snake.c) is a complete 1920x1080 Snake game made
+with RayGPU. It demonstrates shapes, gradients, custom fonts, procedural sound,
+keyboard input, timing, random values, collision logic, a 2D camera, render
+textures, scissor rectangles, blend modes, texture drawing, and an animated
+WGSL shader with uniforms.
+
+Run it natively:
+
+```powershell
+cd examples
+make run
+```
+
+Run the exact same source in a browser:
+
+```powershell
+cd examples
+make server
+```
+
+Snake controls:
+
+- `WASD` or arrow keys: move
+- `P`: pause
+- `Enter`: restart after losing
+
+Snake uses `assets/font.ttf` when available and falls back to the built-in font
+when it is absent. Its sound effects are generated in C and require no files.
+
+## Assets
+
+The root `assets/` directory is intentionally ignored by Git. Create it locally
+and place your game files inside it. The current `main.c` looks for:
+
+```text
+assets/
+|-- example.jpg
+|-- font.ttf
+`-- tone.wav
+```
+
+`make web` copies everything under `assets/` into `build/web/assets/`. Keep
+asset paths relative, such as `LoadTexture("assets/player.png")`, so the same
+source works natively and in the browser.
+
+## Web hosting
+
+`make web` produces a static site:
+
+```text
+build/web/
+|-- index.html
+|-- raygpu.js
+|-- main.wasm
+`-- assets/
+```
+
+Upload the contents of `build/web` to any static host. The host must:
+
+- Use HTTPS in production.
+- Serve `main.wasm` with the `application/wasm` MIME type.
+- Preserve the relative paths under `assets/`.
+
+The server does not need Emscripten, Dawn, Node.js, PowerShell, or a C compiler.
+Opening `index.html` through a `file://` URL is not supported.
+
+## Supported features
+
+- Window creation, resizing, DPI-aware dimensions, focus state, timing, FPS
+  limiting, title/position/size controls, and native minimize/maximize/restore.
+- Complete raylib keyboard constants; press, repeat, release, Unicode character
+  queues, mouse buttons, position, delta, wheel, offset, and scaling.
+- Complete raylib 2D shapes, gradients, polygons, splines, 2D collisions, 2D
+  cameras, and screen/world conversion.
+- PNG, JPEG, BMP, TGA, and first-frame GIF decoding from files or memory.
+- Image creation, copying, cropping, resizing, flipping, arbitrary rotation,
+  alpha/color processing, palettes, blur, convolution, dithering, channel
+  extraction, CPU drawing, and procedural gradients/noise/cellular images.
+- Texture loading, partial/full updates, filtering, wrapping, source rectangles,
+  scaling, rotation, nine-patch drawing, and three-patch drawing.
+- Render textures, alpha/additive/multiplied/color/premultiplied blend modes, and
+  scissor rectangles.
+- Custom WGSL vertex and fragment shaders with float, vector, integer, array,
+  and matrix uniform uploads.
+- Built-in text plus TTF/OTF loading from files or memory, UTF-8 drawing,
+  rotated text, measurement, and glyph lookup.
+- WAV loading from files or memory and sound playback with pause, resume,
+  volume, pitch, pan, and sample updates.
+- Binary/text file loading, path inspection, memory allocation, random-number
+  utilities, and common color/text helpers.
+- Growable WebAssembly memory: 64 MB initially, up to 2 GB or the browser's
+  available limit.
+
+Image decoding and font rasterization use `stb_image` v2.30 and
+`stb_truetype`, amalgamated into `raygpu.h`. Both use public-domain/MIT
+licensing and are also bundled by raylib. Users do not install them separately.
+
+## Custom WGSL contract
+
+Custom shaders use `vs` and `fs` as their entry points. Vertex inputs are:
+
+| Location | Type | Value |
+|---:|---|---|
+| 0 | `vec2f` | position |
+| 1 | `vec2f` | texture coordinates |
+| 2 | `vec4f` | RGBA8 vertex color |
+
+Texture shaders use group 0:
+
+| Binding | Resource |
+|---:|---|
+| 0 | filtering sampler |
+| 1 | `texture_2d<f32>` |
+
+Optional uniforms use a 2048-byte buffer at group 1, binding 0. Declare it as:
+
+```wgsl
+struct Uniforms { values: array<vec4f, 128> };
+@group(1) @binding(0) var<uniform> uniforms: Uniforms;
+```
+
+Uniform location `n` starts at `uniforms.values[n*4]`, reserving 64 bytes for
+that location. See the shader in [`main.c`](main.c) or
+[`examples/snake.c`](examples/snake.c) for complete examples.
+
+## Remaining 2D work
+
+- OGG, MP3, and FLAC decoding, streamed music, procedural audio streams, and
+  audio processors.
+- Image and generated texture mipmaps, animated GIF frames, image exporting,
+  screenshots, and GPU texture readback.
+- Image-based fonts, font-data extraction, and font-atlas export helpers.
+- Extra shader texture samplers and shader attribute reflection.
+- Gamepads, vibration, touch input, gestures, and cursor management.
+- Fullscreen, borderless mode, monitor selection/information, window icons,
+  opacity, clipboard, and dropped files.
+- File saving, directory listing, URL opening, compression, Base64, hashes,
+  logging callbacks, and automation events.
+
+## Current limits
+
+- Native rendering currently supports Windows through Dawn/D3D12.
+- Images and ordinary textures use RGBA8 internally.
+- GIF loading currently returns only the first frame.
+- The built-in font contains a small ASCII subset; use a TTF/OTF font for wider
+  Unicode coverage.
+- RayGPU supports 256 simultaneous texture slots, 32 custom shaders, and
+  262,144 vertices per frame.
+
+## Distribution
+
+Keep `raygpu.h`, `raygpu.js`, and `shell.html` in the repository. Do not
+commit the Dawn checkout or Dawn build output: Dawn is large and
+platform-specific. Native users can build a pinned Dawn revision separately,
+and releases can optionally provide prebuilt Windows Dawn binaries. Web users
+do not need Dawn.
