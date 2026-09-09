@@ -1,12 +1,18 @@
-/* RayGPU: independent raylib-style WebGPU library.
+/* RayGPU: independent, raylib-inspired WebGPU library.
+ * Copyright (c) 2026 Sargonel. Distributed under the zlib license.
  * Define RAYGPU_IMPLEMENTATION and include this file in one C translation unit.
  * Windows uses Dawn + Win32; web uses freestanding Clang WASM + raygpu.js.
- * The compatible API is inspired by raylib by Ramon Santamaria (zlib license).
+ * The API is inspired by raylib by Ramon Santamaria (zlib license).
  */
 #ifndef RAYGPU_H
 #define RAYGPU_H
 #include <stdbool.h>
 #include <stdint.h>
+
+#define RAYGPU_VERSION_MAJOR 0
+#define RAYGPU_VERSION_MINOR 1
+#define RAYGPU_VERSION_PATCH 0
+#define RAYGPU_VERSION "0.1.0-dev"
 
 /* Foundational public types intentionally match raylib's field layout. */
 typedef struct Vector2 { float x,y; } Vector2;
@@ -549,7 +555,10 @@ MR_IMPORT("log") void mr_log(const char *text);
 MR_IMPORT("now") double mr_web_now(void);
 MR_IMPORT("init") void mr_web_init(int width,int height,const char *title);
 MR_IMPORT("window_command") void mr_web_window_command(int command,int a,int b,const char *text);
-MR_IMPORT("present") void mr_web_present(const void *vertices,int vertexCount,const void *batches,int batchCount,int color,unsigned int target);
+MR_IMPORT("present") void mr_web_present(const void *vertices,int vertexCount,const void *batches,int batchCount,const void *draws3d,int drawCount,const void *instances3d,int instanceCount,int color,unsigned int target);
+MR_IMPORT("mesh_upload") void mr_web_mesh_upload(unsigned int id,const void *vertices,int vertexCount,const void *indices,int indexCount);
+MR_IMPORT("mesh_update") void mr_web_mesh_update(unsigned int id,const void *vertices,int vertexCount);
+MR_IMPORT("mesh_unload") void mr_web_mesh_unload(unsigned int id);
 MR_IMPORT("texture") void mr_web_texture(unsigned int id,const void *pixels,int width,int height);
 MR_IMPORT("render_texture") void mr_web_render_texture(unsigned int id,int width,int height);
 MR_IMPORT("shader_load") int mr_web_shader_load(unsigned int id,const char *vsCode,const char *fsCode);
@@ -622,6 +631,9 @@ static int puts(const char *s) { mr_log(s); return 0; }
 
 #define MR_MAX_VERTICES 262144
 #define MR_MAX_TEXTURES 256
+#define MR_MAX_MESHES 1024
+#define MR_MAX_3D_DRAWS 4096
+#define MR_MAX_3D_INSTANCES 8192
 #define MR_PI 3.14159265358979323846f
 #define MR_DEG2RAD (MR_PI/180.0f)
 typedef struct MRVertex { float x,y,u,v,z; unsigned char r,g,b,a; } MRVertex;
@@ -639,21 +651,35 @@ typedef struct MRShaderEntry {
     unsigned int id,nameHashes[32]; unsigned char nameSlots[32]; int locationCount; bool explicitLocations; unsigned char uniforms[32][64];
 } MRShaderEntry;
 typedef struct MRBatch { unsigned int first,count,texture,blend,shader,x,y,width,height; } MRBatch;
+typedef struct MRGpuVertex { float x,y,z,nx,ny,nz,u,v; unsigned char r,g,b,a; } MRGpuVertex;
+typedef struct MRInstance3D { Matrix model,viewProjection; Color tint; float padding[3]; Vector3 camera; float cameraPadding; } MRInstance3D;
+typedef struct MRDraw3D { unsigned int mesh,texture,firstInstance,instanceCount; } MRDraw3D;
+typedef struct MRMeshEntry {
+#ifdef _WIN32
+    WGPUBuffer vertexBuffer,indexBuffer;
+#endif
+    unsigned int id; int vertexCount,indexCount; bool indexed;
+} MRMeshEntry;
 _Static_assert(sizeof(MRVertex)==24,"Vertex layout must match raygpu.js");
 _Static_assert(sizeof(MRBatch)==36,"Batch layout must match raygpu.js");
+_Static_assert(sizeof(MRGpuVertex)==36,"3D vertex layout must match raygpu.js");
+_Static_assert(sizeof(MRInstance3D)==160,"3D instance layout must match raygpu.js");
+_Static_assert(sizeof(MRDraw3D)==16,"3D command layout must match raygpu.js");
 static struct {
     void (*updateDraw)(void);
 #ifdef _WIN32
     WGPUInstance instance; WGPUAdapter adapter; WGPUDevice device; WGPUQueue queue;
     WGPUSurface surface; WGPUSurfaceConfiguration config;
-    WGPURenderPipeline pipelines[6]; WGPUBuffer buffer;
+    WGPURenderPipeline pipelines[6],pipeline3d; WGPUBuffer buffer,instanceBuffer3d;
     WGPUTexture depthTexture; WGPUTextureView depthView; int depthWidth,depthHeight;
     WGPUBindGroupLayout textureLayout,uniformLayout; WGPUSampler sampler;
 #endif
     MRTexture textures[MR_MAX_TEXTURES]; unsigned int nextTexture,white;
+    MRMeshEntry meshes[MR_MAX_MESHES]; unsigned int nextMesh;
     MRShaderEntry shaders[32]; unsigned int nextShader,currentShader;
     MRVertex vertices[MR_MAX_VERTICES]; MRBatch batches[MR_MAX_VERTICES/3];
-    unsigned int vertexCount,batchCount;
+    MRDraw3D draws3d[MR_MAX_3D_DRAWS]; MRInstance3D instances3d[MR_MAX_3D_INSTANCES];
+    unsigned int vertexCount,batchCount,drawCount3d,instanceCount3d;
     bool ready,close,error,drawing,adapterDone,deviceDone,overflow,softwareFrameLimit,resized,focused;
     bool keys[512],pressed[512],repeated[512],released[512];
     bool buttons[3],clicked[3],buttonReleased[3];
@@ -688,10 +714,13 @@ static void mr_yield(int ms) { Sleep((DWORD)ms); }
 static void mr_limit_frame(void) {
     if (!mr.softwareFrameLimit || mr.fps<=0) return;
     const double deadline=mr.frameStart+1.0/mr.fps;
-    /* Windows can delay even a 1 ms sleep when the process is occluded or
-     * power throttled. A busy wait gives stable game-loop pacing above the
-     * monitor refresh rate. */
-    while (mr_clock()<deadline) YieldProcessor();
+    /* Sleep for the coarse part and spin only for the final fraction. This
+     * keeps accurate pacing without burning a CPU core while the game idles. */
+    for (;;) {
+        double remaining=deadline-mr_clock();if(remaining<=0)break;
+        if(remaining>0.002)Sleep((DWORD)((remaining-0.001)*1000.0));
+        else YieldProcessor();
+    }
 }
 #endif
 static void mr_key(int key,bool down) {
@@ -1090,13 +1119,37 @@ static bool mr_renderer(void) {
         blend.alpha.dstFactor=mode==BLEND_ADDITIVE||mode==BLEND_ADD_COLORS||mode==BLEND_SUBTRACT_COLORS?WGPUBlendFactor_One:WGPUBlendFactor_OneMinusSrcAlpha;
         mr.pipelines[mode]=wgpuDeviceCreateRenderPipeline(mr.device,&pipeline);
     }
+    const char *wgsl3d=
+        "struct V{@builtin(position)position:vec4f,@location(0)uv:vec2f,@location(1)color:vec4f,@location(2)normal:vec3f,@location(3)world:vec3f,@location(4)camera:vec3f};\n"
+        "@group(0)@binding(0)var smp:sampler;@group(0)@binding(1)var tex:texture_2d<f32>;\n"
+        "@vertex fn vs(@location(0)p:vec3f,@location(1)n:vec3f,@location(2)uv:vec2f,@location(3)c:vec4f,"
+        "@location(4)m0:vec4f,@location(5)m1:vec4f,@location(6)m2:vec4f,@location(7)m3:vec4f,"
+        "@location(8)v0:vec4f,@location(9)v1:vec4f,@location(10)v2:vec4f,@location(11)v3:vec4f,@location(12)tint:vec4f,@location(13)camera:vec3f)->V{"
+        "let model=mat4x4f(m0,m1,m2,m3);let vp=mat4x4f(v0,v1,v2,v3);let world=vec4f(p,1)*model;var o:V;o.position=world*vp;o.uv=uv;o.color=c*tint;"
+        "let c0=cross(m1.xyz,m2.xyz);let c1=cross(m2.xyz,m0.xyz);let c2=cross(m0.xyz,m1.xyz);let handed=select(-1.0,1.0,dot(m0.xyz,c0)>=0);o.normal=normalize(vec3f(dot(n,c0),dot(n,c1),dot(n,c2))*handed);o.world=world.xyz;o.camera=camera;return o;}\n"
+        "@fragment fn fs(v:V,@builtin(front_facing)front:bool)->@location(0)vec4f{var normal=normalize(v.normal);if(!front){normal=-normal;}"
+        "let light=normalize(vec3f(0.45,0.85,0.35));let diffuse=max(dot(normal,light),0);let view=normalize(v.camera-v.world);let halfVector=normalize(light+view);"
+        "let specular=pow(max(dot(normal,halfVector),0),32)*0.22;let albedo=textureSample(tex,smp,v.uv)*v.color;let lighting=0.22+0.78*diffuse;return vec4f(albedo.rgb*lighting+specular*albedo.a,albedo.a);}";
+    WGPUShaderSourceWGSL source3d=WGPU_SHADER_SOURCE_WGSL_INIT;source3d.code=mr_string(wgsl3d);WGPUShaderModuleDescriptor shaderDesc3d=WGPU_SHADER_MODULE_DESCRIPTOR_INIT;shaderDesc3d.nextInChain=&source3d.chain;WGPUShaderModule shader3d=wgpuDeviceCreateShaderModule(mr.device,&shaderDesc3d);
+    WGPUVertexAttribute meshAttributes[4]={WGPU_VERTEX_ATTRIBUTE_INIT,WGPU_VERTEX_ATTRIBUTE_INIT,WGPU_VERTEX_ATTRIBUTE_INIT,WGPU_VERTEX_ATTRIBUTE_INIT};
+    meshAttributes[0].format=WGPUVertexFormat_Float32x3;meshAttributes[0].offset=offsetof(MRGpuVertex,x);meshAttributes[0].shaderLocation=0;
+    meshAttributes[1].format=WGPUVertexFormat_Float32x3;meshAttributes[1].offset=offsetof(MRGpuVertex,nx);meshAttributes[1].shaderLocation=1;
+    meshAttributes[2].format=WGPUVertexFormat_Float32x2;meshAttributes[2].offset=offsetof(MRGpuVertex,u);meshAttributes[2].shaderLocation=2;
+    meshAttributes[3].format=WGPUVertexFormat_Unorm8x4;meshAttributes[3].offset=offsetof(MRGpuVertex,r);meshAttributes[3].shaderLocation=3;
+    WGPUVertexAttribute instanceAttributes[10];memset(instanceAttributes,0,sizeof instanceAttributes);for(int i=0;i<8;i++){instanceAttributes[i].format=WGPUVertexFormat_Float32x4;instanceAttributes[i].offset=(uint64_t)i*16;instanceAttributes[i].shaderLocation=(uint32_t)i+4;}instanceAttributes[8].format=WGPUVertexFormat_Unorm8x4;instanceAttributes[8].offset=offsetof(MRInstance3D,tint);instanceAttributes[8].shaderLocation=12;instanceAttributes[9].format=WGPUVertexFormat_Float32x3;instanceAttributes[9].offset=offsetof(MRInstance3D,camera);instanceAttributes[9].shaderLocation=13;
+    WGPUVertexBufferLayout layouts3d[2]={WGPU_VERTEX_BUFFER_LAYOUT_INIT,WGPU_VERTEX_BUFFER_LAYOUT_INIT};layouts3d[0].arrayStride=sizeof(MRGpuVertex);layouts3d[0].stepMode=WGPUVertexStepMode_Vertex;layouts3d[0].attributeCount=4;layouts3d[0].attributes=meshAttributes;layouts3d[1].arrayStride=sizeof(MRInstance3D);layouts3d[1].stepMode=WGPUVertexStepMode_Instance;layouts3d[1].attributeCount=10;layouts3d[1].attributes=instanceAttributes;
+    WGPUBlendState blend3d=WGPU_BLEND_STATE_INIT;blend3d.color.srcFactor=WGPUBlendFactor_SrcAlpha;blend3d.color.dstFactor=WGPUBlendFactor_OneMinusSrcAlpha;blend3d.color.operation=WGPUBlendOperation_Add;blend3d.alpha.srcFactor=WGPUBlendFactor_One;blend3d.alpha.dstFactor=WGPUBlendFactor_OneMinusSrcAlpha;blend3d.alpha.operation=WGPUBlendOperation_Add;
+    WGPUColorTargetState target3d=WGPU_COLOR_TARGET_STATE_INIT;target3d.format=mr.config.format;target3d.blend=&blend3d;WGPUFragmentState fragment3d=WGPU_FRAGMENT_STATE_INIT;fragment3d.module=shader3d;fragment3d.entryPoint=mr_string("fs");fragment3d.targetCount=1;fragment3d.targets=&target3d;
+    WGPURenderPipelineDescriptor pipeline3d=WGPU_RENDER_PIPELINE_DESCRIPTOR_INIT;pipeline3d.layout=pipelineLayout;pipeline3d.vertex.module=shader3d;pipeline3d.vertex.entryPoint=mr_string("vs");pipeline3d.vertex.bufferCount=2;pipeline3d.vertex.buffers=layouts3d;pipeline3d.fragment=&fragment3d;pipeline3d.primitive.topology=WGPUPrimitiveTopology_TriangleList;pipeline3d.primitive.cullMode=WGPUCullMode_None;pipeline3d.depthStencil=&depth;mr.pipeline3d=wgpuDeviceCreateRenderPipeline(mr.device,&pipeline3d);
+    wgpuShaderModuleRelease(shader3d);
     wgpuShaderModuleRelease(shader); wgpuPipelineLayoutRelease(pipelineLayout);
     WGPUBufferDescriptor buffer=WGPU_BUFFER_DESCRIPTOR_INIT;
     buffer.size=sizeof mr.vertices; buffer.usage=WGPUBufferUsage_Vertex|WGPUBufferUsage_CopyDst;
     mr.buffer=wgpuDeviceCreateBuffer(mr.device,&buffer);
+    buffer.size=sizeof mr.instances3d;mr.instanceBuffer3d=wgpuDeviceCreateBuffer(mr.device,&buffer);
     const unsigned char white[4]={255,255,255,255}; mr.white=LoadTextureRGBA(white,1,1).id;
     mr.shapesTexture=(Texture2D){mr.white,1,1,1,7}; mr.shapesSource=(Rectangle){0,0,1,1};
-    return mr.pipelines[0] && mr.buffer && mr.white && !mr.error;
+    return mr.pipelines[0] && mr.pipeline3d && mr.buffer && mr.instanceBuffer3d && mr.white && !mr.error;
 }
 static bool mr_resize_depth(int width,int height) {
     if(width<=0||height<=0)return false;
@@ -15064,8 +15117,8 @@ void SetMousePosition(int x,int y) {
 }
 void SetMouseOffset(int x,int y) { mr.mouseOffset=(Vector2){(float)x,(float)y}; }
 void SetMouseScale(float x,float y) { mr.mouseScale=(Vector2){x,y}; }
-void BeginDrawing(void) { mr.vertexCount=mr.batchCount=0; mr.overflow=false; mr.renderTarget=0; mr.targetWidth=mr.width; mr.targetHeight=mr.height; mr.drawing=mr.ready; }
-void ClearBackground(Color color) { mr.clear=color; mr.vertexCount=mr.batchCount=0; }
+void BeginDrawing(void) { mr.vertexCount=mr.batchCount=mr.drawCount3d=mr.instanceCount3d=0; mr.overflow=false; mr.renderTarget=0; mr.targetWidth=mr.width; mr.targetHeight=mr.height; mr.drawing=mr.ready; }
+void ClearBackground(Color color) { mr.clear=color; mr.vertexCount=mr.batchCount=mr.drawCount3d=mr.instanceCount3d=0; }
 void BeginBlendMode(int mode) { mr.blendMode=(mode>=0 && mode<6)?mode:BLEND_ALPHA; }
 void EndBlendMode(void) { mr.blendMode=BLEND_ALPHA; }
 void BeginScissorMode(int x,int y,int width,int height) {
@@ -15207,20 +15260,45 @@ static Matrix mr_model_matrix(Vector3 position,Vector3 axis,float angle,Vector3 
     m.m2=(t*x*z-s*y)*scale.x;m.m6=(t*y*z+s*x)*scale.y;m.m10=(t*z*z+c)*scale.z;
     m.m12=position.x;m.m13=position.y;m.m14=position.z;return m;
 }
-static unsigned int mr_next_mesh_id=0;
-void UploadMesh(Mesh *mesh,bool dynamic){(void)dynamic;if(!mesh||!mesh->vertices||mesh->vertexCount<=0)return;if(!mesh->vaoId)mesh->vaoId=++mr_next_mesh_id;if(!mesh->vboId)mesh->vboId=MemAlloc(7*sizeof(unsigned int));if(mesh->vboId)for(int i=0;i<7;i++)mesh->vboId[i]=mesh->vaoId*8u+(unsigned int)i;}
-void UpdateMeshBuffer(Mesh mesh,int index,const void *data,int dataSize,int offset){if(!data||dataSize<=0||offset<0)return;void *target=NULL;int capacity=0;if(index==0){target=mesh.vertices;capacity=mesh.vertexCount*3*(int)sizeof(float);}else if(index==1){target=mesh.texcoords;capacity=mesh.vertexCount*2*(int)sizeof(float);}else if(index==2){target=mesh.normals;capacity=mesh.vertexCount*3*(int)sizeof(float);}else if(index==3){target=mesh.colors;capacity=mesh.vertexCount*4;}else if(index==4){target=mesh.tangents;capacity=mesh.vertexCount*4*(int)sizeof(float);}else if(index==5){target=mesh.texcoords2;capacity=mesh.vertexCount*2*(int)sizeof(float);}else if(index==6){target=mesh.indices;capacity=mesh.triangleCount*3*(int)sizeof(unsigned short);}if(target&&offset+dataSize<=capacity)memcpy((unsigned char*)target+offset,data,(size_t)dataSize);}
-void UnloadMesh(Mesh mesh){MemFree(mesh.vertices);MemFree(mesh.texcoords);MemFree(mesh.texcoords2);MemFree(mesh.normals);MemFree(mesh.tangents);MemFree(mesh.colors);MemFree(mesh.indices);MemFree(mesh.animVertices);MemFree(mesh.animNormals);MemFree(mesh.boneIds);MemFree(mesh.boneWeights);MemFree(mesh.boneMatrices);MemFree(mesh.vboId);}
+static MRMeshEntry *mr_mesh_entry(unsigned int id){if(!id)return NULL;for(int i=0;i<MR_MAX_MESHES;i++)if(mr.meshes[i].id==id)return &mr.meshes[i];return NULL;}
+static MRGpuVertex *mr_pack_mesh(Mesh mesh){if(!mesh.vertices||mesh.vertexCount<=0)return NULL;MRGpuVertex *packed=MemAlloc((unsigned int)mesh.vertexCount*sizeof(MRGpuVertex));if(!packed)return NULL;float *positions=mesh.animVertices?mesh.animVertices:mesh.vertices,*normals=mesh.animNormals?mesh.animNormals:mesh.normals;for(int i=0;i<mesh.vertexCount;i++){packed[i].x=positions[i*3];packed[i].y=positions[i*3+1];packed[i].z=positions[i*3+2];packed[i].nx=normals?normals[i*3]:0;packed[i].ny=normals?normals[i*3+1]:1;packed[i].nz=normals?normals[i*3+2]:0;packed[i].u=mesh.texcoords?mesh.texcoords[i*2]:0.5f;packed[i].v=mesh.texcoords?mesh.texcoords[i*2+1]:0.5f;packed[i].r=mesh.colors?mesh.colors[i*4]:255;packed[i].g=mesh.colors?mesh.colors[i*4+1]:255;packed[i].b=mesh.colors?mesh.colors[i*4+2]:255;packed[i].a=mesh.colors?mesh.colors[i*4+3]:255;}return packed;}
+static void mr_upload_mesh_data(Mesh mesh,MRMeshEntry *entry){
+    MRGpuVertex *packed=mr_pack_mesh(mesh);if(!packed||!entry)return;int indexCount=mesh.indices?mesh.triangleCount*3:0;
+#ifdef _WIN32
+    if(entry->vertexBuffer)wgpuBufferRelease(entry->vertexBuffer);if(entry->indexBuffer)wgpuBufferRelease(entry->indexBuffer);entry->vertexBuffer=NULL;entry->indexBuffer=NULL;
+    WGPUBufferDescriptor descriptor=WGPU_BUFFER_DESCRIPTOR_INIT;descriptor.size=(uint64_t)mesh.vertexCount*sizeof(MRGpuVertex);descriptor.usage=WGPUBufferUsage_Vertex|WGPUBufferUsage_CopyDst;entry->vertexBuffer=wgpuDeviceCreateBuffer(mr.device,&descriptor);if(entry->vertexBuffer)wgpuQueueWriteBuffer(mr.queue,entry->vertexBuffer,0,packed,(size_t)descriptor.size);
+    if(indexCount>0){size_t indexBytes=(size_t)indexCount*sizeof(unsigned short),paddedBytes=(indexBytes+3)&~(size_t)3;descriptor.size=(uint64_t)paddedBytes;descriptor.usage=WGPUBufferUsage_Index|WGPUBufferUsage_CopyDst;entry->indexBuffer=wgpuDeviceCreateBuffer(mr.device,&descriptor);if(entry->indexBuffer){unsigned char *padded=MemAlloc((unsigned int)paddedBytes);if(padded){memset(padded,0,paddedBytes);memcpy(padded,mesh.indices,indexBytes);wgpuQueueWriteBuffer(mr.queue,entry->indexBuffer,0,padded,paddedBytes);MemFree(padded);}}}
+#else
+    mr_web_mesh_upload(entry->id,packed,mesh.vertexCount,mesh.indices,indexCount);
+#endif
+    entry->vertexCount=mesh.vertexCount;entry->indexCount=indexCount;entry->indexed=indexCount>0;MemFree(packed);
+}
+static void mr_update_mesh_vertices(Mesh mesh){MRMeshEntry *entry=mr_mesh_entry(mesh.vaoId);if(!entry||entry->vertexCount!=mesh.vertexCount)return;MRGpuVertex *packed=mr_pack_mesh(mesh);if(!packed)return;
+#ifdef _WIN32
+    if(entry->vertexBuffer)wgpuQueueWriteBuffer(mr.queue,entry->vertexBuffer,0,packed,(size_t)mesh.vertexCount*sizeof(MRGpuVertex));
+#else
+    mr_web_mesh_update(entry->id,packed,mesh.vertexCount);
+#endif
+    MemFree(packed);
+}
+void UploadMesh(Mesh *mesh,bool dynamic){(void)dynamic;if(!mesh||!mesh->vertices||mesh->vertexCount<=0||!mr.ready)return;MRMeshEntry *entry=mr_mesh_entry(mesh->vaoId);if(!entry)for(int i=0;i<MR_MAX_MESHES;i++)if(!mr.meshes[i].id){entry=&mr.meshes[i];entry->id=++mr.nextMesh;if(!entry->id)entry->id=++mr.nextMesh;mesh->vaoId=entry->id;break;}if(!entry){puts("raygpu: mesh limit reached");return;}if(!mesh->vboId){mesh->vboId=MemAlloc(9*sizeof(unsigned int));if(mesh->vboId)for(int i=0;i<9;i++)mesh->vboId[i]=entry->id;}mr_upload_mesh_data(*mesh,entry);}
+void UpdateMeshBuffer(Mesh mesh,int index,const void *data,int dataSize,int offset){if(!data||dataSize<=0||offset<0)return;void *target=NULL;int capacity=0;if(index==0){target=mesh.animVertices?mesh.animVertices:mesh.vertices;capacity=mesh.vertexCount*3*(int)sizeof(float);}else if(index==1){target=mesh.texcoords;capacity=mesh.vertexCount*2*(int)sizeof(float);}else if(index==2){target=mesh.animNormals?mesh.animNormals:mesh.normals;capacity=mesh.vertexCount*3*(int)sizeof(float);}else if(index==3){target=mesh.colors;capacity=mesh.vertexCount*4;}else if(index==4){target=mesh.tangents;capacity=mesh.vertexCount*4*(int)sizeof(float);}else if(index==5){target=mesh.texcoords2;capacity=mesh.vertexCount*2*(int)sizeof(float);}else if(index==6){target=mesh.indices;capacity=mesh.triangleCount*3*(int)sizeof(unsigned short);}if(target&&offset+dataSize<=capacity){memcpy((unsigned char*)target+offset,data,(size_t)dataSize);MRMeshEntry *entry=mr_mesh_entry(mesh.vaoId);if(entry){if(index==6)mr_upload_mesh_data(mesh,entry);else mr_update_mesh_vertices(mesh);}}}
+void UnloadMesh(Mesh mesh){MRMeshEntry *entry=mr_mesh_entry(mesh.vaoId);if(entry){
+#ifdef _WIN32
+    if(entry->vertexBuffer)wgpuBufferRelease(entry->vertexBuffer);if(entry->indexBuffer)wgpuBufferRelease(entry->indexBuffer);
+#else
+    mr_web_mesh_unload(entry->id);
+#endif
+    memset(entry,0,sizeof *entry);}MemFree(mesh.vertices);MemFree(mesh.texcoords);MemFree(mesh.texcoords2);MemFree(mesh.normals);MemFree(mesh.tangents);MemFree(mesh.colors);MemFree(mesh.indices);MemFree(mesh.animVertices);MemFree(mesh.animNormals);MemFree(mesh.boneIds);MemFree(mesh.boneWeights);MemFree(mesh.boneMatrices);MemFree(mesh.vboId);}
 Material LoadMaterialDefault(void){Material material={0};material.maps=MemAlloc(11*sizeof(MaterialMap));if(material.maps){memset(material.maps,0,11*sizeof(MaterialMap));material.maps[MATERIAL_MAP_ALBEDO].texture=(Texture2D){mr.white,1,1,1,7};material.maps[MATERIAL_MAP_ALBEDO].color=WHITE;material.maps[MATERIAL_MAP_METALNESS].color=WHITE;material.maps[MATERIAL_MAP_ROUGHNESS].value=1;}return material;}
 bool IsMaterialValid(Material material){return material.maps!=NULL;}
 void UnloadMaterial(Material material){MemFree(material.maps);}
 void SetMaterialTexture(Material *material,int mapType,Texture2D texture){if(material&&material->maps&&mapType>=0&&mapType<11)material->maps[mapType].texture=texture;}
 BoundingBox GetMeshBoundingBox(Mesh mesh){BoundingBox box={0};if(!mesh.vertices||mesh.vertexCount<=0)return box;box.min=box.max=(Vector3){mesh.vertices[0],mesh.vertices[1],mesh.vertices[2]};for(int i=1;i<mesh.vertexCount;i++){Vector3 p={mesh.vertices[i*3],mesh.vertices[i*3+1],mesh.vertices[i*3+2]};if(p.x<box.min.x)box.min.x=p.x;if(p.y<box.min.y)box.min.y=p.y;if(p.z<box.min.z)box.min.z=p.z;if(p.x>box.max.x)box.max.x=p.x;if(p.y>box.max.y)box.max.y=p.y;if(p.z>box.max.z)box.max.z=p.z;}return box;}
-void DrawMesh(Mesh mesh,Material material,Matrix transform){
-    if(!mr.camera3dActive||!mesh.vertices||mesh.triangleCount<=0)return;Texture2D texture={mr.white,1,1,1,7};Color base=WHITE;if(material.maps){if(IsTextureValid(material.maps[0].texture))texture=material.maps[0].texture;base=material.maps[0].color;}
-    float *vertices=mesh.animVertices?mesh.animVertices:mesh.vertices;for(int triangle=0;triangle<mesh.triangleCount;triangle++){int ids[3];for(int j=0;j<3;j++)ids[j]=mesh.indices?mesh.indices[triangle*3+j]:triangle*3+j;if(ids[0]>=mesh.vertexCount||ids[1]>=mesh.vertexCount||ids[2]>=mesh.vertexCount)continue;MRProjected3D p[3];Vector2 uv[3];Color color[3];for(int j=0;j<3;j++){int id=ids[j];Vector3 v={vertices[id*3],vertices[id*3+1],vertices[id*3+2]};p[j]=mr_project3d_ex(mr_v3_transform(v,transform),mr.camera3d,mr.targetWidth,mr.targetHeight);uv[j]=mesh.texcoords?(Vector2){mesh.texcoords[id*2],mesh.texcoords[id*2+1]}:(Vector2){0.5f,0.5f};Color vertex=mesh.colors?(Color){mesh.colors[id*4],mesh.colors[id*4+1],mesh.colors[id*4+2],mesh.colors[id*4+3]}:WHITE;color[j]=ColorTint(vertex,base);}mr_projected_triangle_uv(p[0],p[1],p[2],uv[0],uv[1],uv[2],color[0],color[1],color[2],texture.id);}
-}
-void DrawMeshInstanced(Mesh mesh,Material material,const Matrix *transforms,int instances){if(!transforms)return;for(int i=0;i<instances;i++)DrawMesh(mesh,material,transforms[i]);}
+static Matrix mr_view_projection(Camera3D camera,int width,int height){Vector3 r,u,f;mr_camera_basis(camera,&r,&u,&f);float aspect=height>0?(float)width/height:1,n=0.01f,farPlane=1000.0f;Matrix m={0};if(camera.projection==CAMERA_ORTHOGRAPHIC){float vertical=camera.fovy>0?camera.fovy:1,sx=2/(vertical*aspect),sy=2/vertical,sz=1/(farPlane-n);m.m0=r.x*sx;m.m4=r.y*sx;m.m8=r.z*sx;m.m12=-mr_v3_dot(r,camera.position)*sx;m.m1=u.x*sy;m.m5=u.y*sy;m.m9=u.z*sy;m.m13=-mr_v3_dot(u,camera.position)*sy;m.m2=f.x*sz;m.m6=f.y*sz;m.m10=f.z*sz;m.m14=(-mr_v3_dot(f,camera.position)-n)*sz;m.m15=1;}else{float tangent=sinf(camera.fovy*MR_DEG2RAD*0.5f)/cosf(camera.fovy*MR_DEG2RAD*0.5f);if(tangent<=0)tangent=0.0001f;float sx=1/(tangent*aspect),sy=1/tangent,sz=farPlane/(farPlane-n),cameraForward=mr_v3_dot(f,camera.position);m.m0=r.x*sx;m.m4=r.y*sx;m.m8=r.z*sx;m.m12=-mr_v3_dot(r,camera.position)*sx;m.m1=u.x*sy;m.m5=u.y*sy;m.m9=u.z*sy;m.m13=-mr_v3_dot(u,camera.position)*sy;m.m2=f.x*sz;m.m6=f.y*sz;m.m10=f.z*sz;m.m14=-cameraForward*sz-n*farPlane/(farPlane-n);m.m3=f.x;m.m7=f.y;m.m11=f.z;m.m15=-cameraForward;}return m;}
+static void mr_queue_mesh_instances(Mesh mesh,Material material,const Matrix *transforms,int count){if(!mr.drawing||!mr.camera3dActive||!transforms||count<=0||!mr_mesh_entry(mesh.vaoId))return;if(mr.instanceCount3d>=(unsigned int)MR_MAX_3D_INSTANCES||mr.drawCount3d>=(unsigned int)MR_MAX_3D_DRAWS)return;if(count>MR_MAX_3D_INSTANCES-(int)mr.instanceCount3d)count=MR_MAX_3D_INSTANCES-(int)mr.instanceCount3d;Texture2D texture={mr.white,1,1,1,7};Color tint=WHITE;if(material.maps){if(IsTextureValid(material.maps[MATERIAL_MAP_ALBEDO].texture))texture=material.maps[MATERIAL_MAP_ALBEDO].texture;tint=material.maps[MATERIAL_MAP_ALBEDO].color;}unsigned int first=mr.instanceCount3d;Matrix vp=mr_view_projection(mr.camera3d,mr.targetWidth,mr.targetHeight);for(int i=0;i<count;i++)mr.instances3d[mr.instanceCount3d++]=(MRInstance3D){transforms[i],vp,tint,{0,0,0},mr.camera3d.position,0};MRDraw3D *last=mr.drawCount3d?&mr.draws3d[mr.drawCount3d-1]:NULL;if(last&&last->mesh==mesh.vaoId&&last->texture==texture.id&&last->firstInstance+last->instanceCount==first)last->instanceCount+=(unsigned int)count;else mr.draws3d[mr.drawCount3d++]=(MRDraw3D){mesh.vaoId,texture.id,first,(unsigned int)count};}
+void DrawMesh(Mesh mesh,Material material,Matrix transform){mr_queue_mesh_instances(mesh,material,&transform,1);}
+void DrawMeshInstanced(Mesh mesh,Material material,const Matrix *transforms,int instances){mr_queue_mesh_instances(mesh,material,transforms,instances);}
 Model LoadModelFromMesh(Mesh mesh){Model model={0};model.transform=mr_matrix_identity();model.meshCount=1;model.materialCount=1;model.meshes=MemAlloc(sizeof(Mesh));model.materials=MemAlloc(sizeof(Material));model.meshMaterial=MemAlloc(sizeof(int));if(!model.meshes||!model.materials||!model.meshMaterial){MemFree(model.meshes);MemFree(model.materials);MemFree(model.meshMaterial);return(Model){0};}model.meshes[0]=mesh;model.materials[0]=LoadMaterialDefault();model.meshMaterial[0]=0;return model;}
 bool IsModelValid(Model model){if(model.meshCount<=0||!model.meshes||model.materialCount<=0||!model.materials||!model.meshMaterial)return false;for(int i=0;i<model.meshCount;i++)if(model.meshes[i].vertices&&model.meshes[i].vertexCount>0&&model.meshes[i].triangleCount>0)return true;return false;}
 void SetModelMeshMaterial(Model *model,int meshId,int materialId){if(model&&model->meshMaterial&&meshId>=0&&meshId<model->meshCount&&materialId>=0&&materialId<model->materialCount)model->meshMaterial[meshId]=materialId;}
@@ -15442,7 +15520,7 @@ static Matrix mr_matrix_affine_inverse(Matrix m){
     float a=m.m0,b=m.m4,c=m.m8,d=m.m1,e=m.m5,f=m.m9,g=m.m2,h=m.m6,i=m.m10,det=a*(e*i-f*h)-b*(d*i-f*g)+c*(d*h-e*g);if(det>-0.000001f&&det<0.000001f)return mr_matrix_identity();float q=1/det;Matrix r=mr_matrix_identity();r.m0=(e*i-f*h)*q;r.m4=(c*h-b*i)*q;r.m8=(b*f-c*e)*q;r.m1=(f*g-d*i)*q;r.m5=(a*i-c*g)*q;r.m9=(c*d-a*f)*q;r.m2=(d*h-e*g)*q;r.m6=(b*g-a*h)*q;r.m10=(a*e-b*d)*q;r.m12=-(r.m0*m.m12+r.m4*m.m13+r.m8*m.m14);r.m13=-(r.m1*m.m12+r.m5*m.m13+r.m9*m.m14);r.m14=-(r.m2*m.m12+r.m6*m.m13+r.m10*m.m14);return r;
 }
 void UpdateModelAnimationBones(Model model,ModelAnimation anim,int frame){if(!IsModelAnimationValid(model,anim)||anim.frameCount<=0||!anim.framePoses)return;if(frame<0)frame=0;frame%=anim.frameCount;for(int m=0;m<model.meshCount;m++)if(model.meshes[m].boneMatrices)for(int b=0;b<model.boneCount;b++){Matrix bind=mr_gltf_trs(model.bindPose[b].translation,model.bindPose[b].rotation,model.bindPose[b].scale),pose=mr_gltf_trs(anim.framePoses[frame][b].translation,anim.framePoses[frame][b].rotation,anim.framePoses[frame][b].scale);model.meshes[m].boneMatrices[b]=mr_matrix_multiply(pose,mr_matrix_affine_inverse(bind));}}
-void UpdateModelAnimation(Model model,ModelAnimation anim,int frame){UpdateModelAnimationBones(model,anim,frame);for(int m=0;m<model.meshCount;m++){Mesh mesh=model.meshes[m];if(!mesh.animVertices||!mesh.boneIds||!mesh.boneWeights||!mesh.boneMatrices)continue;for(int v=0;v<mesh.vertexCount;v++){Vector3 source={mesh.vertices[v*3],mesh.vertices[v*3+1],mesh.vertices[v*3+2]},normal=mesh.normals?(Vector3){mesh.normals[v*3],mesh.normals[v*3+1],mesh.normals[v*3+2]}:(Vector3){0};Vector3 result={0},normalResult={0};float total=0;for(int j=0;j<4;j++){float weight=mesh.boneWeights[v*4+j];int bone=mesh.boneIds[v*4+j];if(weight<=0||bone<0||bone>=mesh.boneCount)continue;Vector3 p=mr_v3_transform(source,mesh.boneMatrices[bone]),n=mr_transform_direction(normal,mesh.boneMatrices[bone]);result=mr_v3_add(result,mr_v3_scale(p,weight));normalResult=mr_v3_add(normalResult,mr_v3_scale(n,weight));total+=weight;}if(total<=0){result=source;normalResult=normal;}mesh.animVertices[v*3]=result.x;mesh.animVertices[v*3+1]=result.y;mesh.animVertices[v*3+2]=result.z;if(mesh.animNormals){normalResult=mr_v3_norm(normalResult);mesh.animNormals[v*3]=normalResult.x;mesh.animNormals[v*3+1]=normalResult.y;mesh.animNormals[v*3+2]=normalResult.z;}}}}
+void UpdateModelAnimation(Model model,ModelAnimation anim,int frame){UpdateModelAnimationBones(model,anim,frame);for(int m=0;m<model.meshCount;m++){Mesh mesh=model.meshes[m];if(!mesh.animVertices||!mesh.boneIds||!mesh.boneWeights||!mesh.boneMatrices)continue;for(int v=0;v<mesh.vertexCount;v++){Vector3 source={mesh.vertices[v*3],mesh.vertices[v*3+1],mesh.vertices[v*3+2]},normal=mesh.normals?(Vector3){mesh.normals[v*3],mesh.normals[v*3+1],mesh.normals[v*3+2]}:(Vector3){0};Vector3 result={0},normalResult={0};float total=0;for(int j=0;j<4;j++){float weight=mesh.boneWeights[v*4+j];int bone=mesh.boneIds[v*4+j];if(weight<=0||bone<0||bone>=mesh.boneCount)continue;Vector3 p=mr_v3_transform(source,mesh.boneMatrices[bone]),n=mr_transform_direction(normal,mesh.boneMatrices[bone]);result=mr_v3_add(result,mr_v3_scale(p,weight));normalResult=mr_v3_add(normalResult,mr_v3_scale(n,weight));total+=weight;}if(total<=0){result=source;normalResult=normal;}mesh.animVertices[v*3]=result.x;mesh.animVertices[v*3+1]=result.y;mesh.animVertices[v*3+2]=result.z;if(mesh.animNormals){normalResult=mr_v3_norm(normalResult);mesh.animNormals[v*3]=normalResult.x;mesh.animNormals[v*3+1]=normalResult.y;mesh.animNormals[v*3+2]=normalResult.z;}}mr_update_mesh_vertices(mesh);}}
 void UnloadModelAnimation(ModelAnimation anim){if(anim.framePoses)for(int i=0;i<anim.frameCount;i++)MemFree(anim.framePoses[i]);MemFree(anim.framePoses);MemFree(anim.bones);}
 void UnloadModelAnimations(ModelAnimation *animations,int animCount){if(animations)for(int i=0;i<animCount;i++)UnloadModelAnimation(animations[i]);MemFree(animations);}
 bool IsModelAnimationValid(Model model,ModelAnimation anim){if(model.boneCount<=0||model.boneCount!=anim.boneCount||!model.bones||!anim.bones)return false;for(int i=0;i<model.boneCount;i++)if(model.bones[i].parent!=anim.bones[i].parent)return false;return true;}
@@ -16110,10 +16188,14 @@ void DrawFPS(int x,int y) {
 }
 void BeginTextureMode(RenderTexture2D target) {
     if (!IsRenderTextureValid(target)) return;
-    mr.vertexCount=mr.batchCount=0; mr.overflow=false; mr.renderTarget=target.id;
+    mr.vertexCount=mr.batchCount=mr.drawCount3d=mr.instanceCount3d=0; mr.overflow=false; mr.renderTarget=target.id;
     mr.targetWidth=target.texture.width; mr.targetHeight=target.texture.height; mr.drawing=true;
 }
 #ifdef _WIN32
+static void mr_render_3d_commands(WGPURenderPassEncoder pass,MRTexture *target,int width,int height){
+    if(!mr.drawCount3d||!mr.instanceCount3d||!mr.pipeline3d||!mr.instanceBuffer3d)return;wgpuQueueWriteBuffer(mr.queue,mr.instanceBuffer3d,0,mr.instances3d,(size_t)mr.instanceCount3d*sizeof(MRInstance3D));wgpuRenderPassEncoderSetPipeline(pass,mr.pipeline3d);wgpuRenderPassEncoderSetScissorRect(pass,0,0,(uint32_t)width,(uint32_t)height);
+    for(unsigned int i=0;i<mr.drawCount3d;i++){MRDraw3D command=mr.draws3d[i];MRMeshEntry *mesh=mr_mesh_entry(command.mesh);MRTexture *texture=mr_texture(command.texture);if(!mesh||!mesh->vertexBuffer||!texture||texture==target||!command.instanceCount)continue;wgpuRenderPassEncoderSetVertexBuffer(pass,0,mesh->vertexBuffer,0,(uint64_t)mesh->vertexCount*sizeof(MRGpuVertex));wgpuRenderPassEncoderSetVertexBuffer(pass,1,mr.instanceBuffer3d,(uint64_t)command.firstInstance*sizeof(MRInstance3D),(uint64_t)command.instanceCount*sizeof(MRInstance3D));wgpuRenderPassEncoderSetBindGroup(pass,0,texture->group,0,NULL);if(mesh->indexed&&mesh->indexBuffer){wgpuRenderPassEncoderSetIndexBuffer(pass,mesh->indexBuffer,WGPUIndexFormat_Uint16,0,(uint64_t)mesh->indexCount*sizeof(unsigned short));wgpuRenderPassEncoderDrawIndexed(pass,(uint32_t)mesh->indexCount,command.instanceCount,0,0,0);}else wgpuRenderPassEncoderDraw(pass,(uint32_t)mesh->vertexCount,command.instanceCount,0,0);}
+}
 static void mr_render_texture_pass(MRTexture *target,int width,int height) {
     WGPUCommandEncoder encoder=wgpuDeviceCreateCommandEncoder(mr.device,NULL);
     WGPURenderPassColorAttachment attachment={0}; attachment.depthSlice=(uint32_t)-1; attachment.view=target->view;
@@ -16122,6 +16204,7 @@ static void mr_render_texture_pass(MRTexture *target,int width,int height) {
     WGPURenderPassDepthStencilAttachment depth=WGPU_RENDER_PASS_DEPTH_STENCIL_ATTACHMENT_INIT;depth.view=target->depthView;depth.depthLoadOp=WGPULoadOp_Clear;depth.depthStoreOp=WGPUStoreOp_Store;depth.depthClearValue=1.0f;depth.stencilLoadOp=WGPULoadOp_Undefined;depth.stencilStoreOp=WGPUStoreOp_Undefined;
     WGPURenderPassDescriptor desc=WGPU_RENDER_PASS_DESCRIPTOR_INIT; desc.colorAttachmentCount=1; desc.colorAttachments=&attachment;desc.depthStencilAttachment=&depth;
     WGPURenderPassEncoder pass=wgpuCommandEncoderBeginRenderPass(encoder,&desc);
+    mr_render_3d_commands(pass,target,width,height);
     if (mr.vertexCount) {
         wgpuQueueWriteBuffer(mr.queue,mr.buffer,0,mr.vertices,mr.vertexCount*sizeof(MRVertex));
         wgpuRenderPassEncoderSetVertexBuffer(pass,0,mr.buffer,0,mr.vertexCount*sizeof(MRVertex));
@@ -16144,7 +16227,7 @@ static void mr_render_texture_pass(MRTexture *target,int width,int height) {
 void EndTextureMode(void) {
     if (!mr.drawing || !mr.renderTarget) return; MRTexture *target=mr_texture(mr.renderTarget);
     if (target) mr_render_texture_pass(target,mr.targetWidth,mr.targetHeight);
-    mr.drawing=false;mr.renderTarget=0;mr.targetWidth=mr.width;mr.targetHeight=mr.height;mr.vertexCount=mr.batchCount=0;
+    mr.drawing=false;mr.renderTarget=0;mr.targetWidth=mr.width;mr.targetHeight=mr.height;mr.vertexCount=mr.batchCount=mr.drawCount3d=mr.instanceCount3d=0;
 }
 void EndDrawing(void) {
     if (!mr.drawing) return;
@@ -16167,6 +16250,7 @@ void EndDrawing(void) {
             WGPURenderPassDepthStencilAttachment depth=WGPU_RENDER_PASS_DEPTH_STENCIL_ATTACHMENT_INIT;depth.view=mr.depthView;depth.depthLoadOp=WGPULoadOp_Clear;depth.depthStoreOp=WGPUStoreOp_Store;depth.depthClearValue=1.0f;depth.stencilLoadOp=WGPULoadOp_Undefined;depth.stencilStoreOp=WGPUStoreOp_Undefined;
             WGPURenderPassDescriptor desc=WGPU_RENDER_PASS_DESCRIPTOR_INIT; desc.colorAttachmentCount=1; desc.colorAttachments=&attachment;desc.depthStencilAttachment=&depth;
             WGPURenderPassEncoder pass=wgpuCommandEncoderBeginRenderPass(encoder,&desc);
+            mr_render_3d_commands(pass,NULL,mr.width,mr.height);
             if (mr.vertexCount) {
                 wgpuQueueWriteBuffer(mr.queue,mr.buffer,0,mr.vertices,mr.vertexCount*sizeof(MRVertex));
                 wgpuRenderPassEncoderSetVertexBuffer(pass,0,mr.buffer,0,mr.vertexCount*sizeof(MRVertex));
@@ -16208,10 +16292,13 @@ void CloseWindow(void) {
     mr.white=0;
     for (int i=0;i<MR_MAX_TEXTURES;i++) if (mr.textures[i].id) UnloadTexture((Texture2D){mr.textures[i].id,0,0,0,0});
     for (int i=0;i<32;i++) if (mr.shaders[i].id) UnloadShader((Shader){mr.shaders[i].id,NULL});
+    for(int i=0;i<MR_MAX_MESHES;i++)if(mr.meshes[i].id){if(mr.meshes[i].vertexBuffer)wgpuBufferRelease(mr.meshes[i].vertexBuffer);if(mr.meshes[i].indexBuffer)wgpuBufferRelease(mr.meshes[i].indexBuffer);memset(&mr.meshes[i],0,sizeof mr.meshes[i]);}
     if (mr.buffer) wgpuBufferRelease(mr.buffer);
+    if (mr.instanceBuffer3d) wgpuBufferRelease(mr.instanceBuffer3d);
     if (mr.depthView) wgpuTextureViewRelease(mr.depthView);
     if (mr.depthTexture) wgpuTextureRelease(mr.depthTexture);
     for (int i=0;i<6;i++) if (mr.pipelines[i]) wgpuRenderPipelineRelease(mr.pipelines[i]);
+    if(mr.pipeline3d)wgpuRenderPipelineRelease(mr.pipeline3d);
     if (mr.sampler) wgpuSamplerRelease(mr.sampler);
     if (mr.textureLayout) wgpuBindGroupLayoutRelease(mr.textureLayout);
     if (mr.uniformLayout) wgpuBindGroupLayoutRelease(mr.uniformLayout);
@@ -16224,22 +16311,22 @@ void CloseWindow(void) {
     if (mr.window) DestroyWindow(mr.window);
     mr.window=NULL;
 #endif
-    mr.buffer=NULL;mr.depthView=NULL;mr.depthTexture=NULL;memset(mr.pipelines,0,sizeof mr.pipelines); mr.sampler=NULL; mr.textureLayout=NULL;mr.uniformLayout=NULL; mr.queue=NULL;
+    mr.buffer=NULL;mr.instanceBuffer3d=NULL;mr.pipeline3d=NULL;mr.depthView=NULL;mr.depthTexture=NULL;memset(mr.pipelines,0,sizeof mr.pipelines); mr.sampler=NULL; mr.textureLayout=NULL;mr.uniformLayout=NULL; mr.queue=NULL;
     mr.device=NULL; mr.surface=NULL; mr.adapter=NULL; mr.instance=NULL;
 }
 #else
 void EndTextureMode(void) {
     if (!mr.drawing || !mr.renderTarget) return;
     uint32_t color=(uint32_t)mr.clear.r|((uint32_t)mr.clear.g<<8)|((uint32_t)mr.clear.b<<16)|((uint32_t)mr.clear.a<<24);
-    mr_web_present(mr.vertices,(int)mr.vertexCount,mr.batches,(int)mr.batchCount,(int)color,mr.renderTarget);
-    mr.drawing=false;mr.renderTarget=0;mr.targetWidth=mr.width;mr.targetHeight=mr.height;mr.vertexCount=mr.batchCount=0;
+    mr_web_present(mr.vertices,(int)mr.vertexCount,mr.batches,(int)mr.batchCount,mr.draws3d,(int)mr.drawCount3d,mr.instances3d,(int)mr.instanceCount3d,(int)color,mr.renderTarget);
+    mr.drawing=false;mr.renderTarget=0;mr.targetWidth=mr.width;mr.targetHeight=mr.height;mr.vertexCount=mr.batchCount=mr.drawCount3d=mr.instanceCount3d=0;
 }
 void EndDrawing(void) {
     if (!mr.drawing) return;
     mr.drawing=false;
     if (!mr.close) {
         uint32_t color=(uint32_t)mr.clear.r | ((uint32_t)mr.clear.g<<8) | ((uint32_t)mr.clear.b<<16) | ((uint32_t)mr.clear.a<<24);
-        mr_web_present(mr.vertices,(int)mr.vertexCount,mr.batches,(int)mr.batchCount,(int)color,0);
+        mr_web_present(mr.vertices,(int)mr.vertexCount,mr.batches,(int)mr.batchCount,mr.draws3d,(int)mr.drawCount3d,mr.instances3d,(int)mr.instanceCount3d,(int)color,0);
     }
     mr_finish_input_frame();
 }
@@ -16249,6 +16336,7 @@ void CloseWindow(void) {
     mr.ready=false; mr.close=true; mr.drawing=false; mr.white=0;
     for (int i=0;i<MR_MAX_TEXTURES;i++) if (mr.textures[i].id) UnloadTexture((Texture2D){mr.textures[i].id,0,0,0,0});
     for (int i=0;i<32;i++) if (mr.shaders[i].id) UnloadShader((Shader){mr.shaders[i].id,NULL});
+    for(int i=0;i<MR_MAX_MESHES;i++)if(mr.meshes[i].id){mr_web_mesh_unload(mr.meshes[i].id);memset(&mr.meshes[i],0,sizeof mr.meshes[i]);}
     mr_web_close();
 }
 MR_EXPORT("raygpu_key") void raygpu_key(int key,int down) { mr_key(key,down!=0); }

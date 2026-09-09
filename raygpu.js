@@ -7,8 +7,9 @@
     const status = document.getElementById("status");
     const textures = new Map();
     const shaders = new Map();
+    const meshes = new Map();
     const events = new AbortController();
-    let device, context, buffer, wasm, pipelines, sampler, textureLayout, uniformLayout, defaultPipelineLayout, pipelineLayout, audioContext, masterGain;
+    let device, context, buffer, instanceBuffer3d, wasm, pipelines, pipeline3d, sampler, textureLayout, uniformLayout, defaultPipelineLayout, pipelineLayout, audioContext, masterGain;
     let depthTexture, depthWidth=0, depthHeight=0;
     const sounds = new Map();
     let stopped = false, targetFPS = 60, lastFrame;
@@ -18,14 +19,17 @@
         events.abort();
         for (const entry of textures.values()) entry.texture.destroy();
         textures.clear();
+        for (const mesh of meshes.values()) { mesh.vertexBuffer.destroy(); if (mesh.indexBuffer) mesh.indexBuffer.destroy(); }
+        meshes.clear();
         if (buffer) buffer.destroy();
+        if (instanceBuffer3d) instanceBuffer3d.destroy();
         if (depthTexture) depthTexture.destroy();
         if (context) context.unconfigure();
         if (device) device.destroy();
         if (audioContext) audioContext.close();
     }
     function fail(error) {
-        console.error(error);
+        console.error(error && error.message ? error.message : String(error));
         close();
         status.textContent = "WebGPU error: " + (error.message || error);
     }
@@ -76,6 +80,45 @@
             depthStencil:{format:"depth24plus",depthWriteEnabled:true,depthCompare:"less-equal"}});
         pipelines = await Promise.all(blendStates.map(blend => device.createRenderPipelineAsync(pipelineDescriptor(blend))));
         buffer = device.createBuffer({size: 262144 * 24, usage: GPUBufferUsage.VERTEX | GPUBufferUsage.COPY_DST});
+        const shader3d = device.createShaderModule({code: `
+            struct V { @builtin(position) position: vec4f, @location(0) uv: vec2f, @location(1) color: vec4f,
+                @location(2) normal: vec3f, @location(3) world: vec3f, @location(4) camera: vec3f };
+            @group(0) @binding(0) var smp: sampler; @group(0) @binding(1) var tex: texture_2d<f32>;
+            @vertex fn vs(@location(0) p: vec3f, @location(1) n: vec3f, @location(2) uv: vec2f, @location(3) c: vec4f,
+                @location(4) m0: vec4f, @location(5) m1: vec4f, @location(6) m2: vec4f, @location(7) m3: vec4f,
+                @location(8) v0: vec4f, @location(9) v1: vec4f, @location(10) v2: vec4f, @location(11) v3: vec4f,
+                @location(12) tint: vec4f, @location(13) camera: vec3f) -> V {
+                let model=mat4x4f(m0,m1,m2,m3); let vp=mat4x4f(v0,v1,v2,v3); let world=vec4f(p,1)*model;
+                var o: V; o.position=world*vp; o.uv=uv; o.color=c*tint;
+                let c0=cross(m1.xyz,m2.xyz); let c1=cross(m2.xyz,m0.xyz); let c2=cross(m0.xyz,m1.xyz);
+                let handed=select(-1.0,1.0,dot(m0.xyz,c0)>=0);
+                o.normal=normalize(vec3f(dot(n,c0),dot(n,c1),dot(n,c2))*handed);
+                o.world=world.xyz; o.camera=camera; return o;
+            }
+            @fragment fn fs(v: V, @builtin(front_facing) front: bool) -> @location(0) vec4f {
+                var normal=normalize(v.normal); if (!front) { normal=-normal; }
+                let light=normalize(vec3f(0.45,0.85,0.35)); let diffuse=max(dot(normal,light),0);
+                let view=normalize(v.camera-v.world); let halfVector=normalize(light+view);
+                let specular=pow(max(dot(normal,halfVector),0),32)*0.22;
+                let albedo=textureSample(tex,smp,v.uv)*v.color; let lighting=0.22+0.78*diffuse;
+                return vec4f(albedo.rgb*lighting+specular*albedo.a,albedo.a);
+            }
+        `});
+        pipeline3d = await device.createRenderPipelineAsync({layout:defaultPipelineLayout,
+            vertex:{module:shader3d,entryPoint:"vs",buffers:[
+                {arrayStride:36,stepMode:"vertex",attributes:[
+                    {shaderLocation:0,offset:0,format:"float32x3"},{shaderLocation:1,offset:12,format:"float32x3"},
+                    {shaderLocation:2,offset:24,format:"float32x2"},{shaderLocation:3,offset:32,format:"unorm8x4"}]},
+                {arrayStride:160,stepMode:"instance",attributes:[
+                    {shaderLocation:4,offset:0,format:"float32x4"},{shaderLocation:5,offset:16,format:"float32x4"},
+                    {shaderLocation:6,offset:32,format:"float32x4"},{shaderLocation:7,offset:48,format:"float32x4"},
+                    {shaderLocation:8,offset:64,format:"float32x4"},{shaderLocation:9,offset:80,format:"float32x4"},
+                    {shaderLocation:10,offset:96,format:"float32x4"},{shaderLocation:11,offset:112,format:"float32x4"},
+                    {shaderLocation:12,offset:128,format:"unorm8x4"},{shaderLocation:13,offset:144,format:"float32x3"}]}]},
+            fragment:{module:shader3d,entryPoint:"fs",targets:[{format,blend:blendStates[0]}]},
+            primitive:{topology:"triangle-list",cullMode:"none"},
+            depthStencil:{format:"depth24plus",depthWriteEnabled:true,depthCompare:"less"}});
+        instanceBuffer3d=device.createBuffer({size:8192*160,usage:GPUBufferUsage.VERTEX|GPUBufferUsage.COPY_DST});
         sampler = device.createSampler({magFilter: "nearest", minFilter: "nearest",
             addressModeU: "repeat", addressModeV: "repeat"});
         const textDecoder = new TextDecoder();
@@ -249,7 +292,20 @@
                 const shader=shaders.get(id);if(!shader||location<0||location>=32)return;
                 device.queue.writeBuffer(shader.uniformBuffer,location*64,new Uint8Array(wasm.memory.buffer,pointer,size));
             },
-            present: (vertices, count, batches, batchCount, color, targetId) => {
+            mesh_upload: (id, vertices, vertexCount, indices, indexCount) => {
+                const previous=meshes.get(id);if(previous){previous.vertexBuffer.destroy();if(previous.indexBuffer)previous.indexBuffer.destroy();}
+                if(!id||!vertices||vertexCount<=0)return;
+                const vertexBuffer=device.createBuffer({size:Math.max(4,vertexCount*36),usage:GPUBufferUsage.VERTEX|GPUBufferUsage.COPY_DST});
+                device.queue.writeBuffer(vertexBuffer,0,new Uint8Array(wasm.memory.buffer,vertices,vertexCount*36));
+                let indexBuffer=null;if(indices&&indexCount>0){const bytes=indexCount*2,padded=(bytes+3)&~3;indexBuffer=device.createBuffer({size:padded,usage:GPUBufferUsage.INDEX|GPUBufferUsage.COPY_DST});const data=new Uint8Array(padded);data.set(new Uint8Array(wasm.memory.buffer,indices,bytes));device.queue.writeBuffer(indexBuffer,0,data);}
+                meshes.set(id,{vertexBuffer,indexBuffer,vertexCount,indexCount});
+            },
+            mesh_update: (id, vertices, vertexCount) => {
+                const mesh=meshes.get(id);if(!mesh||!vertices||vertexCount!==mesh.vertexCount)return;
+                device.queue.writeBuffer(mesh.vertexBuffer,0,new Uint8Array(wasm.memory.buffer,vertices,vertexCount*36));
+            },
+            mesh_unload: id => { const mesh=meshes.get(id);if(mesh){mesh.vertexBuffer.destroy();if(mesh.indexBuffer)mesh.indexBuffer.destroy();}meshes.delete(id); },
+            present: (vertices, count, batches, batchCount, draws3d, drawCount3d, instances3d, instanceCount3d, color, targetId) => {
                 if (stopped) return;
                 const target=targetId ? textures.get(targetId) : null;
                 if (targetId && !target) return;
@@ -261,7 +317,16 @@
                 const pass = encoder.beginRenderPass({colorAttachments: [{
                     view: target ? target.view : context.getCurrentTexture().createView(), loadOp: "clear", storeOp: "store",
                     clearValue: [(color & 255)/255, ((color>>>8)&255)/255, ((color>>>16)&255)/255, (color>>>24)/255]
-                }],depthStencilAttachment:{view:target?target.depthView:depthTexture.createView(),depthLoadOp:"clear",depthStoreOp:"store",depthClearValue:1}});
+                 }],depthStencilAttachment:{view:target?target.depthView:depthTexture.createView(),depthLoadOp:"clear",depthStoreOp:"store",depthClearValue:1}});
+                if(instanceCount3d>0&&drawCount3d>0){
+                    device.queue.writeBuffer(instanceBuffer3d,0,new Uint8Array(wasm.memory.buffer,instances3d,instanceCount3d*160));
+                    const commands=new Uint32Array(wasm.memory.buffer,draws3d,drawCount3d*4);pass.setPipeline(pipeline3d);
+                    pass.setScissorRect(0,0,target?target.width:canvas.width,target?target.height:canvas.height);
+                    for(let i=0;i<commands.length;i+=4){const mesh=meshes.get(commands[i]),entry=textures.get(commands[i+1]);if(!mesh||!entry||entry===target)continue;
+                        pass.setVertexBuffer(0,mesh.vertexBuffer);pass.setVertexBuffer(1,instanceBuffer3d,commands[i+2]*160,commands[i+3]*160);pass.setBindGroup(0,entry.group);
+                        if(mesh.indexBuffer){pass.setIndexBuffer(mesh.indexBuffer,"uint16");pass.drawIndexed(mesh.indexCount,commands[i+3],0,0,0);}else pass.draw(mesh.vertexCount,commands[i+3],0,0);
+                    }
+                }
                 if (count) {
                     device.queue.writeBuffer(buffer, 0, new Uint8Array(wasm.memory.buffer, vertices, count*24));
                     pass.setVertexBuffer(0, buffer, 0, count*24);

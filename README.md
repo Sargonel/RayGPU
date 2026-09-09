@@ -1,16 +1,16 @@
 # RayGPU
 
-RayGPU is an experimental, single-header 2D/3D C library with a raylib-style API
-and a WebGPU renderer. The same C source can compile as a native Windows
-program or as freestanding WebAssembly for a browser.
+RayGPU is an independent, single-header 2D/3D C library inspired by raylib and
+built around WebGPU. The same C source can compile as a native Windows program
+or as freestanding WebAssembly for a browser.
 
 The web build does **not** use Emscripten, WASI, Node.js, or a package manager.
 Native Windows rendering uses Dawn with D3D12. Browser rendering uses WebGPU
 through the small `raygpu.js` platform bridge.
 
-RayGPU is not yet a complete drop-in raylib replacement. It includes meshes,
-models, glTF 2.0 materials, and basic skeletal animation, while advanced 3D
-rendering is still being built. VR and stereo rendering are outside its scope.
+Its familiar C API covers windowing, input, 2D drawing, audio, images, fonts,
+shaders, meshes, glTF 2.0 models, and skeletal animation. Advanced 3D rendering
+is still being built. VR and stereo rendering are outside its scope.
 
 ## Quick start
 
@@ -51,6 +51,25 @@ Native Windows builds require:
 - A Dawn source checkout at `../dawn`.
 - Dawn generated headers and libraries under `build/dawn-release`.
 - Windows 10 or newer with a D3D12-capable GPU.
+
+RayGPU currently tracks Dawn revision
+`be6033b3c82301df3559d02f6b14671ba7b1ce08`. Use that revision while the
+native backend is still tied directly to Dawn's evolving C API:
+
+```powershell
+cd ..
+git clone https://dawn.googlesource.com/dawn
+cd dawn
+git checkout be6033b3c82301df3559d02f6b14671ba7b1ce08
+python tools/fetch_dawn_dependencies.py
+cd ..\WebGPU
+cmake -S ..\dawn -B build\dawn-release -G Ninja `
+  -DCMAKE_BUILD_TYPE=Release `
+  -DDAWN_BUILD_MONOLITHIC_LIBRARY=STATIC `
+  -DDAWN_BUILD_SAMPLES=OFF -DDAWN_BUILD_TESTS=OFF -DTINT_BUILD_TESTS=OFF
+cmake --build build\dawn-release --target webgpu_dawn
+make native
+```
 
 Web builds require:
 
@@ -165,8 +184,14 @@ Opening `index.html` through a `file://` URL is not supported.
   world-to-screen projection, cubes, spheres, cylinders, planes, grids, 3D
   lines/triangles, wireframes, and basic 3D collision queries.
 - Raylib-compatible `Mesh`, `Material`, and `Model` structures; mesh upload and
-  updates, solid/wire/point model drawing, instancing, mesh/model bounds, mesh
-  ray collisions, and plane/cube/sphere mesh generators.
+  updates, persistent WebGPU vertex/index buffers, solid/wire/point model
+  drawing, real GPU instancing, mesh/model bounds, mesh ray collisions, and
+  plane/cube/sphere mesh generators.
+- A dedicated GPU 3D pipeline with model/view/projection transforms in WGSL,
+  hardware clipping, perspective-correct texture interpolation, depth testing,
+  nonuniform-scale-safe normals, ambient light, directional diffuse light, and
+  basic specular highlights. The dynamic CPU triangle batch remains dedicated
+  to 2D shapes, sprites, text, and lightweight debug geometry.
 - Dependency-free glTF 2.0 (`.gltf` and `.glb`) loading with external, data-URI,
   and embedded buffers/textures; flattened node transforms and instances;
   positions, normals, tangents, two UV sets, vertex colors, and 8/16/32-bit
@@ -261,11 +286,12 @@ and WGSL stay synchronized. See the shader in [`main.c`](main.c) or
 
 ## Remaining 3D work
 
-- Persistent GPU mesh buffers, mesh downloads, tangent generation, and the
-  remaining procedural mesh generators.
+- Mesh downloads, tangent generation, and the remaining procedural mesh
+  generators.
 - OBJ loading, retained node/scene hierarchies, sparse accessors, morph targets,
   and compressed mesh extensions.
-- Lighting, fog, full PBR map shading, and additional samplers.
+- Configurable lights, fog, full PBR map shading, custom 3D shaders, and
+  additional samplers.
 - Textured 3D primitives, billboards, heightmaps, cubic maps, and skyboxes.
 - GPU skinning and support for multiple armatures.
 - The remaining mesh, model, and ray collision helpers.
@@ -292,3 +318,12 @@ commit the Dawn checkout or Dawn build output: Dawn is large and
 platform-specific. Native users can build a pinned Dawn revision separately,
 and releases can optionally provide prebuilt Windows Dawn binaries. Web users
 do not need Dawn.
+
+The public API currently reports version `0.1.0-dev` through
+`RAYGPU_VERSION`; the numeric components are also available as
+`RAYGPU_VERSION_MAJOR`, `RAYGPU_VERSION_MINOR`, and `RAYGPU_VERSION_PATCH`.
+
+## License
+
+RayGPU is distributed under the zlib license. See [`LICENSE`](LICENSE).
+The licenses for the embedded stb components remain included in `raygpu.h`.

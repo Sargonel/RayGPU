@@ -18,7 +18,7 @@ web:
 	$(CC) $(CFLAGS) $(WEB_FLAGS) main.c -o build/web/main.wasm
 	powershell -NoProfile -Command "Copy-Item -LiteralPath 'shell.html' -Destination 'build/web/index.html' -Force"
 	powershell -NoProfile -Command "Copy-Item -LiteralPath 'raygpu.js' -Destination 'build/web/raygpu.js' -Force"
-	powershell -NoProfile -Command "Copy-Item -Path 'assets/*' -Destination 'build/web/assets' -Recurse -Force"
+	powershell -NoProfile -Command "if (Test-Path 'assets') { Copy-Item -Path 'assets/*' -Destination 'build/web/assets' -Recurse -Force }"
 
 run: native
 	.\main.exe
