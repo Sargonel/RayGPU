@@ -42,6 +42,8 @@ jobs:
           cp raygpu.js dist/raygpu.js
           mkdir -p dist/examples/assets
           cp examples/assets/example.glb dist/examples/assets/example.glb
+          sed -i "s|raygpu.js|raygpu.js?rev=${GITHUB_SHA}|" dist/index.html
+          sed -i "s|fetch(\"main.wasm\")|fetch(\"main.wasm?rev=${GITHUB_SHA}\", { cache: \"no-cache\" })|" dist/raygpu.js
           touch dist/.nojekyll
 
       - name: Configure GitHub Pages
