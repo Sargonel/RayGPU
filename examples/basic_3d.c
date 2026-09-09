@@ -44,7 +44,7 @@ void Basic3DUpdate(void)
         DrawRectangle(24, 24, 680, 150, (Color){0, 0, 0, 170});
         DrawText("RayGPU basic 3D", 44, 40, 36, RAYWHITE);
         DrawText("Move the pointer over the cube to highlight it", 44, 86, 22, LIGHTGRAY);
-        DrawText(IsModelValid(glbModel) ? "Loaded assets/example.glb" : "assets/example.glb not found",
+        DrawText(IsModelValid(glbModel) ? "Loaded examples/assets/example.glb" : "Example GLB could not be loaded",
             44, 142, 20, IsModelValid(glbModel) ? GOLD : GRAY);
         if (glbAnimationCount > 0) DrawText("Playing the first model animation", 390, 142, 20, SKYBLUE);
         DrawExampleBackButton();
@@ -62,8 +62,8 @@ void Basic3DInit(void)
         .fovy = 45,
         .projection = CAMERA_PERSPECTIVE
     };
-    glbModel = LoadModel("assets/example.glb");
-    glbAnimations = LoadModelAnimations("assets/example.glb", &glbAnimationCount);
+    glbModel = LoadModel("examples/assets/example.glb");
+    glbAnimations = LoadModelAnimations("examples/assets/example.glb", &glbAnimationCount);
     SetWindowTitle(IsModelValid(glbModel) ?
         "RayGPU Examples - Basic 3D - GLB loaded" : "RayGPU Examples - Basic 3D");
 }

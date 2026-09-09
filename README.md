@@ -126,7 +126,9 @@ The catalog currently contains:
   rectangles, blend modes, texture drawing, and animated shader uniforms.
 - [`examples/basic_3d.c`](examples/basic_3d.c): the shared native/browser depth
   buffer, perspective camera, 3D primitives, wireframes, grid drawing, and
-  mouse-ray box picking.
+  mouse-ray box picking. Its small GLB model is stored in
+  [`examples/assets/example.glb`](examples/assets/example.glb) and is published
+  with the online catalog.
 
 Snake controls:
 

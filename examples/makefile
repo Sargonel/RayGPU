@@ -15,9 +15,11 @@ native:
 
 web:
 	cmd /C "if not exist ..\build\web mkdir ..\build\web"
+	cmd /C "if not exist ..\build\web\examples\assets mkdir ..\build\web\examples\assets"
 	$(CC) $(CFLAGS) $(WEB_FLAGS) main.c snake.c basic_3d.c -o ../build/web/main.wasm
 	powershell -NoProfile -Command "Copy-Item -LiteralPath '../shell.html' -Destination '../build/web/index.html' -Force"
 	powershell -NoProfile -Command "Copy-Item -LiteralPath '../raygpu.js' -Destination '../build/web/raygpu.js' -Force"
+	powershell -NoProfile -Command "Copy-Item -Path 'assets/*' -Destination '../build/web/examples/assets' -Recurse -Force"
 	powershell -NoProfile -Command "if (Test-Path '../assets') { Copy-Item -Path '../assets' -Destination '../build/web' -Recurse -Force }"
 
 run: native

@@ -40,6 +40,8 @@ jobs:
             -o dist/main.wasm
           cp shell.html dist/index.html
           cp raygpu.js dist/raygpu.js
+          mkdir -p dist/examples/assets
+          cp examples/assets/example.glb dist/examples/assets/example.glb
           touch dist/.nojekyll
 
       - name: Configure GitHub Pages
