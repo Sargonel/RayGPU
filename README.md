@@ -4,7 +4,7 @@ RayGPU is an independent, single-header 2D/3D C library inspired by raylib and
 built around WebGPU. The same C source can compile as a native Windows program
 or as freestanding WebAssembly for a browser.
 
-**[Run the example catalog in your browser](https://sargonel.github.io/SarLIb/)**
+**[Run the example catalog in your browser](https://sargonel.github.io/RayGPU/)**
 
 The web build does **not** use Emscripten, WASI, Node.js, or a package manager.
 Native Windows rendering uses Dawn with D3D12. Browser rendering uses WebGPU
@@ -182,7 +182,7 @@ after every push to `main`. In the GitHub repository, open **Settings → Pages*
 and select **GitHub Actions** as the source once. The live project URL is:
 
 ```text
-https://sargonel.github.io/SarLIb/
+https://sargonel.github.io/RayGPU/
 ```
 
 If the GitHub repository is renamed, update this README link to use the new
