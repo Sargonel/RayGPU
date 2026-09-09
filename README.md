@@ -315,18 +315,6 @@ and WGSL stay synchronized. See the shader in [`main.c`](main.c) or
 - RayGPU supports 256 simultaneous texture slots, 32 custom shaders, and
   262,144 vertices per frame.
 
-## Distribution
-
-Keep `raygpu.h`, `raygpu.js`, and `shell.html` in the repository. Do not
-commit the Dawn checkout or Dawn build output: Dawn is large and
-platform-specific. Native users can build a pinned Dawn revision separately,
-and releases can optionally provide prebuilt Windows Dawn binaries. Web users
-do not need Dawn.
-
-The public API currently reports version `0.1.0-dev` through
-`RAYGPU_VERSION`; the numeric components are also available as
-`RAYGPU_VERSION_MAJOR`, `RAYGPU_VERSION_MINOR`, and `RAYGPU_VERSION_PATCH`.
-
 ## License
 
 RayGPU is distributed under the zlib license. See [`LICENSE`](LICENSE).
