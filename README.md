@@ -4,6 +4,8 @@ RayGPU is an independent, single-header 2D/3D C library inspired by raylib and
 built around WebGPU. The same C source can compile as a native Windows program
 or as freestanding WebAssembly for a browser.
 
+**[Run the example catalog in your browser](https://sargonel.github.io/SarLIb/)**
+
 The web build does **not** use Emscripten, WASI, Node.js, or a package manager.
 Native Windows rendering uses Dawn with D3D12. Browser rendering uses WebGPU
 through the small `raygpu.js` platform bridge.
@@ -171,6 +173,20 @@ Upload the contents of `build/web` to any static host. The host must:
 
 The server does not need Emscripten, Dawn, Node.js, PowerShell, or a C compiler.
 Opening `index.html` through a `file://` URL is not supported.
+
+## GitHub Pages demo
+
+The workflow in [`.github/workflows/pages.yml`](.github/workflows/pages.yml)
+builds the example catalog without Emscripten and deploys it to GitHub Pages
+after every push to `main`. In the GitHub repository, open **Settings → Pages**
+and select **GitHub Actions** as the source once. The live project URL is:
+
+```text
+https://sargonel.github.io/SarLIb/
+```
+
+If the GitHub repository is renamed, update this README link to use the new
+repository name. The workflow itself does not require a URL change.
 
 ## Supported features
 

@@ -1,0 +1,55 @@
+name: Deploy example catalog to GitHub Pages
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+
+      - name: Install WebAssembly compiler
+        run: sudo apt-get update && sudo apt-get install --yes clang lld
+
+      - name: Build example catalog
+        run: |
+          mkdir -p dist
+          clang -std=c17 -O2 -Wall -Wextra \
+            --target=wasm32 -ffreestanding -nostdlib \
+            -Wl,--no-entry -Wl,--export=main -Wl,--export-memory \
+            -Wl,-z,stack-size=1048576 \
+            -Wl,--initial-memory=67108864 \
+            -Wl,--max-memory=2147483648 \
+            examples/main.c examples/snake.c examples/basic_3d.c \
+            -o dist/main.wasm
+          cp shell.html dist/index.html
+          cp raygpu.js dist/raygpu.js
+          touch dist/.nojekyll
+
+      - name: Configure GitHub Pages
+        uses: actions/configure-pages@v5
+
+      - name: Upload site
+        uses: actions/upload-pages-artifact@v4
+        with:
+          path: dist
+
+      - name: Deploy site
+        id: deployment
+        uses: actions/deploy-pages@v4
