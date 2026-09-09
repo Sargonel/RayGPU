@@ -176,20 +176,6 @@ Upload the contents of `build/web` to any static host. The host must:
 The server does not need Emscripten, Dawn, Node.js, PowerShell, or a C compiler.
 Opening `index.html` through a `file://` URL is not supported.
 
-## GitHub Pages demo
-
-The workflow in [`.github/workflows/pages.yml`](.github/workflows/pages.yml)
-builds the example catalog without Emscripten and deploys it to GitHub Pages
-after every push to `main`. In the GitHub repository, open **Settings → Pages**
-and select **GitHub Actions** as the source once. The live project URL is:
-
-```text
-https://sargonel.github.io/RayGPU/
-```
-
-If the GitHub repository is renamed, update this README link to use the new
-repository name. The workflow itself does not require a URL change.
-
 ## Supported features
 
 - Window creation, resizing, DPI-aware dimensions, focus state, timing, FPS
