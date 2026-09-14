@@ -1,6 +1,7 @@
 *.exe
 /build/
 /assets/
+/.deps/
 *.obj
 *.pdb
 .vscode/

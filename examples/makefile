@@ -1,10 +1,9 @@
 CC = clang
-DAWN = ../../dawn
-DAWN_BUILD = ../build/dawn-release
+DAWN_SDK ?= ../.deps/dawn-sdk
 
 CFLAGS = -std=c17 -O2 -Wall -Wextra
-NATIVE_FLAGS = -I$(DAWN)/include -I$(DAWN_BUILD)/gen/include
-NATIVE_LIBS = -L$(DAWN_BUILD)/src/dawn/native -lwebgpu_dawn -lDXGuid -lKernel32 -lOneCore -luser32 -lgdi32 -lwinmm
+NATIVE_FLAGS = -I"$(DAWN_SDK)/include"
+NATIVE_LIBS = -L"$(DAWN_SDK)/lib" -lwebgpu_dawn -lDXGuid -lKernel32 -lOneCore -luser32 -lgdi32 -lwinmm
 WEB_FLAGS = --target=wasm32 -ffreestanding -nostdlib -Wl,--no-entry -Wl,--export=main -Wl,--export-memory -Wl,-z,stack-size=1048576 -Wl,--initial-memory=67108864 -Wl,--max-memory=2147483648
 
 .PHONY: native web run server clean
@@ -29,4 +28,4 @@ server: web
 	powershell -NoProfile -ExecutionPolicy Bypass -File ../serve.ps1
 
 clean:
-	powershell -NoProfile -Command "Remove-Item -LiteralPath 'examples.exe','d3dcompiler_47.dll','../build/web' -Recurse -Force -ErrorAction SilentlyContinue"
+	powershell -NoProfile -Command "$$paths = @('examples.exe','d3dcompiler_47.dll','../build/web'); foreach ($$path in $$paths) { if (Test-Path -LiteralPath $$path) { Remove-Item -LiteralPath $$path -Recurse -Force } }"

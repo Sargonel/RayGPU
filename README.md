@@ -50,28 +50,32 @@ while the browser uses `requestAnimationFrame()`.
 Native Windows builds require:
 
 - Clang with C17 support.
-- A Dawn source checkout at `../dawn`.
-- Dawn generated headers and libraries under `build/dawn-release`.
 - Windows 10 or newer with a D3D12-capable GPU.
 
-RayGPU currently tracks Dawn revision
-`be6033b3c82301df3559d02f6b14671ba7b1ce08`. Use that revision while the
-native backend is still tied directly to Dawn's evolving C API:
+Install RayGPU's pinned Windows x64 Dawn SDK once, then build normally:
 
 ```powershell
-cd ..
-git clone https://dawn.googlesource.com/dawn
-cd dawn
-git checkout be6033b3c82301df3559d02f6b14671ba7b1ce08
-python tools/fetch_dawn_dependencies.py
-cd ..\WebGPU
-cmake -S ..\dawn -B build\dawn-release -G Ninja `
-  -DCMAKE_BUILD_TYPE=Release `
-  -DDAWN_BUILD_MONOLITHIC_LIBRARY=STATIC `
-  -DDAWN_BUILD_SAMPLES=OFF -DDAWN_BUILD_TESTS=OFF -DTINT_BUILD_TESTS=OFF
-cmake --build build\dawn-release --target webgpu_dawn
-make native
+.\setup-dawn.ps1
+make run
 ```
+
+The installer downloads
+[`raygpu-dawn-sdk-windows-x64-be6033b.zip`](https://github.com/Sargonel/RayGPU/releases/download/dawn-sdk-be6033b/raygpu-dawn-sdk-windows-x64-be6033b.zip),
+verifies the archive and library SHA-256 checksums, and extracts it to the
+gitignored `.deps/dawn-sdk` directory. The package contains only the public and
+generated headers, monolithic `webgpu_dawn.lib`, build metadata, and required
+license notices. It is built from Dawn revision
+`be6033b3c82301df3559d02f6b14671ba7b1ce08` for Windows x64 with Clang 22.1.8.
+
+To use a manually installed compatible SDK, override the make variable:
+
+```powershell
+make run DAWN_SDK=C:/path/to/dawn-sdk
+```
+
+Developers rebuilding Dawn can create the same directory layout with
+`include/dawn`, `include/webgpu`, and `lib/webgpu_dawn.lib`. The source and
+generated headers must come from the same Dawn revision as the library.
 
 Web builds require:
 
@@ -79,8 +83,8 @@ Web builds require:
 - A browser with WebGPU support.
 - HTTPS when deployed. `localhost` is allowed for development.
 
-The Dawn paths can be changed at the top of the root `makefile`. Dawn is only
-needed for native builds; browsers provide their own WebGPU implementation.
+Dawn is only needed for native builds; browsers provide their own WebGPU
+implementation and do not use the SDK.
 
 ## Commands
 
