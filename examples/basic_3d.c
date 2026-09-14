@@ -42,6 +42,8 @@ void Basic3DUpdate(void)
                 (Vector3){1, 0, 0}, 65.0f, (Vector3){1, 1, 1}, PURPLE);
             if (IsTextureValid(billboardTexture)) DrawBillboard(camera, billboardTexture,
                 (Vector3){-4.0f, 4.5f, 2.5f}, 1.4f, WHITE);
+            if (IsTextureValid(billboardTexture)) DrawCubeTexture(billboardTexture,
+                (Vector3){4.0f, 1.0f, 4.5f}, 2.0f, 2.0f, 2.0f, WHITE);
             DrawLine3D((Vector3){0, 0, 0}, (Vector3){3, 0, 0}, RED);
             DrawLine3D((Vector3){0, 0, 0}, (Vector3){0, 3, 0}, GREEN);
             DrawLine3D((Vector3){0, 0, 0}, (Vector3){0, 0, 3}, BLUE);

@@ -258,6 +258,8 @@ void DrawTriangle3D(Vector3 v1,Vector3 v2,Vector3 v3,Color color);
 void DrawTriangleStrip3D(const Vector3 *points,int pointCount,Color color);
 void DrawCube(Vector3 position,float width,float height,float length,Color color);
 void DrawCubeV(Vector3 position,Vector3 size,Color color);
+void DrawCubeTexture(Texture2D texture,Vector3 position,float width,float height,float length,Color color);
+void DrawCubeTextureRec(Texture2D texture,Rectangle source,Vector3 position,float width,float height,float length,Color color);
 void DrawCubeWires(Vector3 position,float width,float height,float length,Color color);
 void DrawCubeWiresV(Vector3 position,Vector3 size,Color color);
 void DrawSphere(Vector3 centerPos,float radius,Color color);
@@ -296,6 +298,8 @@ void DrawBoundingBox(BoundingBox box,Color color);
 void UploadMesh(Mesh *mesh,bool dynamic);
 void UpdateMeshBuffer(Mesh mesh,int index,const void *data,int dataSize,int offset);
 void UnloadMesh(Mesh mesh);
+bool ExportMesh(Mesh mesh,const char *fileName);
+bool ExportMeshAsCode(Mesh mesh,const char *fileName);
 void DrawMesh(Mesh mesh,Material material,Matrix transform);
 void DrawMeshInstanced(Mesh mesh,Material material,const Matrix *transforms,int instances);
 BoundingBox GetMeshBoundingBox(Mesh mesh);
@@ -440,8 +444,10 @@ int TextToInteger(const char *text);
 float TextToFloat(const char *text);
 unsigned char *LoadFileData(const char *fileName,int *dataSize);
 void UnloadFileData(unsigned char *data);
+bool SaveFileData(const char *fileName,void *data,int dataSize);
 char *LoadFileText(const char *fileName);
 void UnloadFileText(char *text);
+bool SaveFileText(const char *fileName,char *text);
 bool FileExists(const char *fileName);
 bool DirectoryExists(const char *dirPath);
 bool IsFileExtension(const char *fileName,const char *ext);
@@ -589,6 +595,7 @@ MR_IMPORT("close") void mr_web_close(void);
 MR_IMPORT("fps") void mr_web_fps(int fps);
 MR_IMPORT("file_size") int mr_web_file_size(const char *fileName);
 MR_IMPORT("file_read") int mr_web_file_read(const char *fileName,void *data,int size);
+MR_IMPORT("file_write") int mr_web_file_write(const char *fileName,const void *data,int size);
 MR_IMPORT("sin") float sinf(float x);
 MR_IMPORT("cos") float cosf(float x);
 static float sqrtf(float x) { return __builtin_sqrtf(x); }
@@ -1422,6 +1429,17 @@ unsigned char *LoadFileData(const char *fileName,int *dataSize) {
     if (dataSize) *dataSize=size; return data;
 }
 void UnloadFileData(unsigned char *data) { MemFree(data); }
+bool SaveFileData(const char *fileName,void *data,int dataSize) {
+    if (!fileName || !data || dataSize<0) return false;
+#ifdef __wasm__
+    return mr_web_file_write(fileName,data,dataSize)!=0;
+#else
+    FILE *file=NULL; if (fopen_s(&file,fileName,"wb")!=0 || !file) return false;
+    bool saved=fwrite(data,1,(size_t)dataSize,file)==(size_t)dataSize;
+    if (fclose(file)!=0) saved=false;
+    return saved;
+#endif
+}
 int GetFileLength(const char *fileName) {
 #ifdef __wasm__
     return fileName ? mr_web_file_size(fileName) : 0;
@@ -1438,6 +1456,11 @@ char *LoadFileText(const char *fileName) {
     UnloadFileData(data); return text;
 }
 void UnloadFileText(char *text) { MemFree(text); }
+bool SaveFileText(const char *fileName,char *text) {
+    if (!text) return false;
+    int length=0; while (text[length]) length++;
+    return SaveFileData(fileName,text,length);
+}
 bool DirectoryExists(const char *path) {
 #ifdef _WIN32
     DWORD attributes=path?GetFileAttributesA(path):INVALID_FILE_ATTRIBUTES;
@@ -15237,6 +15260,20 @@ void DrawCubeV(Vector3 p,Vector3 s,Color color){
     int f[12][3]={{0,2,1},{0,3,2},{4,5,6},{4,6,7},{0,1,5},{0,5,4},{3,7,6},{3,6,2},{0,4,7},{0,7,3},{1,2,6},{1,6,5}};for(int i=0;i<12;i++)mr_triangle3d(v[f[i][0]],v[f[i][1]],v[f[i][2]],color);
 }
 void DrawCube(Vector3 p,float w,float h,float l,Color c){DrawCubeV(p,(Vector3){w,h,l},c);}
+void DrawCubeTextureRec(Texture2D texture,Rectangle source,Vector3 p,float w,float h,float l,Color color){
+    if(!mr.camera3dActive||!IsTextureValid(texture)||texture.width<=0||texture.height<=0)return;
+    float x=w/2,y=h/2,z=l/2;
+    Vector3 v[8]={{p.x-x,p.y-y,p.z-z},{p.x+x,p.y-y,p.z-z},{p.x+x,p.y+y,p.z-z},{p.x-x,p.y+y,p.z-z},{p.x-x,p.y-y,p.z+z},{p.x+x,p.y-y,p.z+z},{p.x+x,p.y+y,p.z+z},{p.x-x,p.y+y,p.z+z}};
+    int faces[6][4]={{0,3,2,1},{4,5,6,7},{0,1,5,4},{3,7,6,2},{0,4,7,3},{1,2,6,5}};
+    float u0=source.x/texture.width,v0=source.y/texture.height,u1=(source.x+source.width)/texture.width,v1=(source.y+source.height)/texture.height;
+    Vector2 uv[4]={{u0,v1},{u0,v0},{u1,v0},{u1,v1}};
+    for(int face=0;face<6;face++){
+        MRProjected3D q[4];for(int i=0;i<4;i++)q[i]=mr_project3d_ex(v[faces[face][i]],mr.camera3d,mr.targetWidth,mr.targetHeight);
+        mr_projected_triangle_uv(q[0],q[1],q[2],uv[0],uv[1],uv[2],color,color,color,texture.id);
+        mr_projected_triangle_uv(q[0],q[2],q[3],uv[0],uv[2],uv[3],color,color,color,texture.id);
+    }
+}
+void DrawCubeTexture(Texture2D texture,Vector3 position,float width,float height,float length,Color color){DrawCubeTextureRec(texture,(Rectangle){0,0,(float)texture.width,(float)texture.height},position,width,height,length,color);}
 void DrawCubeWiresV(Vector3 p,Vector3 s,Color color){float x=s.x/2,y=s.y/2,z=s.z/2;Vector3 v[8]={{p.x-x,p.y-y,p.z-z},{p.x+x,p.y-y,p.z-z},{p.x+x,p.y+y,p.z-z},{p.x-x,p.y+y,p.z-z},{p.x-x,p.y-y,p.z+z},{p.x+x,p.y-y,p.z+z},{p.x+x,p.y+y,p.z+z},{p.x-x,p.y+y,p.z+z}};int e[12][2]={{0,1},{1,2},{2,3},{3,0},{4,5},{5,6},{6,7},{7,4},{0,4},{1,5},{2,6},{3,7}};for(int i=0;i<12;i++)DrawLine3D(v[e[i][0]],v[e[i][1]],color);}
 void DrawCubeWires(Vector3 p,float w,float h,float l,Color c){DrawCubeWiresV(p,(Vector3){w,h,l},c);}
 void DrawSphereEx(Vector3 center,float radius,int rings,int slices,Color color){if(rings<2)rings=2;if(slices<3)slices=3;for(int y=0;y<rings;y++){float a0=-MR_PI/2+MR_PI*y/rings,a1=-MR_PI/2+MR_PI*(y+1)/rings;for(int x=0;x<slices;x++){float b0=2*MR_PI*x/slices,b1=2*MR_PI*(x+1)/slices;Vector3 p0={center.x+cosf(a0)*cosf(b0)*radius,center.y+sinf(a0)*radius,center.z+cosf(a0)*sinf(b0)*radius},p1={center.x+cosf(a0)*cosf(b1)*radius,center.y+sinf(a0)*radius,center.z+cosf(a0)*sinf(b1)*radius},p2={center.x+cosf(a1)*cosf(b1)*radius,center.y+sinf(a1)*radius,center.z+cosf(a1)*sinf(b1)*radius},p3={center.x+cosf(a1)*cosf(b0)*radius,center.y+sinf(a1)*radius,center.z+cosf(a1)*sinf(b0)*radius};mr_triangle3d(p0,p1,p2,color);mr_triangle3d(p0,p2,p3,color);}}}
@@ -15407,6 +15444,39 @@ Mesh GenMeshCubicmap(Image cubicmap,Vector3 cubeSize){
     if(!IsImageValid(cubicmap)||cubicmap.width<=0||cubicmap.height<=0)return(Mesh){0};int cubes=0;for(int z=0;z<cubicmap.height;z++)for(int x=0;x<cubicmap.width;x++){Color c=GetImageColor(cubicmap,x,z);if(c.r||c.g||c.b)cubes++;}Mesh mesh=mr_mesh_allocate(cubes*12);if(!mesh.vertices)return mesh;int vertex=0;int faces[6][4]={{0,3,2,1},{4,5,6,7},{0,1,5,4},{3,7,6,2},{0,4,7,3},{1,2,6,5}};Vector3 normals[6]={{0,0,-1},{0,0,1},{0,-1,0},{0,1,0},{-1,0,0},{1,0,0}};int order[6]={0,1,2,0,2,3};Vector2 uv[4]={{0,1},{1,1},{1,0},{0,0}};
     for(int z=0;z<cubicmap.height;z++)for(int x=0;x<cubicmap.width;x++){Color c=GetImageColor(cubicmap,x,z);if(!(c.r||c.g||c.b))continue;Vector3 center={((float)x-(cubicmap.width-1)*0.5f)*cubeSize.x,cubeSize.y*0.5f,((float)z-(cubicmap.height-1)*0.5f)*cubeSize.z},p[8]={{center.x-cubeSize.x/2,0,center.z-cubeSize.z/2},{center.x+cubeSize.x/2,0,center.z-cubeSize.z/2},{center.x+cubeSize.x/2,cubeSize.y,center.z-cubeSize.z/2},{center.x-cubeSize.x/2,cubeSize.y,center.z-cubeSize.z/2},{center.x-cubeSize.x/2,0,center.z+cubeSize.z/2},{center.x+cubeSize.x/2,0,center.z+cubeSize.z/2},{center.x+cubeSize.x/2,cubeSize.y,center.z+cubeSize.z/2},{center.x-cubeSize.x/2,cubeSize.y,center.z+cubeSize.z/2}};for(int f=0;f<6;f++)for(int i=0;i<6;i++){int q=order[i];mr_mesh_vertex(&mesh,vertex++,p[faces[f][q]],normals[f],uv[q]);}}
     UploadMesh(&mesh,false);return mesh;
+}
+typedef struct MRTextBuilder { char *data; int length,capacity; bool failed; } MRTextBuilder;
+static bool mr_text_reserve(MRTextBuilder *builder,int extra){
+    if(builder->failed||extra<0||builder->length>0x7fffffff-extra){builder->failed=true;return false;}
+    int required=builder->length+extra+1;if(required<=builder->capacity)return true;int capacity=builder->capacity?builder->capacity:1024;
+    while(capacity<required){if(capacity>0x3fffffff){capacity=required;break;}capacity*=2;}
+    char *grown=MemRealloc(builder->data,(unsigned int)capacity);if(!grown){builder->failed=true;return false;}builder->data=grown;builder->capacity=capacity;return true;
+}
+static void mr_text_append_n(MRTextBuilder *builder,const char *text,int length){if(!text||length<=0||!mr_text_reserve(builder,length))return;memcpy(builder->data+builder->length,text,(size_t)length);builder->length+=length;builder->data[builder->length]=0;}
+static void mr_text_append(MRTextBuilder *builder,const char *text){int length=0;if(!text)return;while(text[length])length++;mr_text_append_n(builder,text,length);}
+static void mr_text_integer(MRTextBuilder *builder,int value){char digits[16];int count=0;unsigned int number;if(value<0){mr_text_append(builder,"-");number=(unsigned int)(-(value+1))+1;}else number=(unsigned int)value;do{digits[count++]=(char)('0'+number%10);number/=10;}while(number);while(count--)mr_text_append_n(builder,&digits[count],1);}
+static void mr_text_float(MRTextBuilder *builder,float value){
+    if(value<0){mr_text_append(builder,"-");value=-value;}if(value>2147483000.0f)value=2147483000.0f;
+    int whole=(int)value;float fraction=value-whole;int decimals=(int)(fraction*1000000.0f+0.5f);if(decimals>=1000000){whole++;decimals=0;}mr_text_integer(builder,whole);
+    if(decimals){char digits[6];for(int i=5;i>=0;i--){digits[i]=(char)('0'+decimals%10);decimals/=10;}int count=6;while(count>0&&digits[count-1]=='0')count--;mr_text_append(builder,".");mr_text_append_n(builder,digits,count);}else mr_text_append(builder,".0");
+}
+static bool mr_text_save(MRTextBuilder *builder,const char *fileName){bool result=!builder->failed&&builder->data&&SaveFileData(fileName,builder->data,builder->length);MemFree(builder->data);builder->data=NULL;return result;}
+bool ExportMesh(Mesh mesh,const char *fileName){
+    if(!fileName||!mesh.vertices||mesh.vertexCount<=0||mesh.triangleCount<=0||!IsFileExtension(fileName,".obj"))return false;MRTextBuilder out={0};mr_text_append(&out,"# Exported by RayGPU\n");
+    for(int i=0;i<mesh.vertexCount;i++){mr_text_append(&out,"v ");for(int c=0;c<3;c++){if(c)mr_text_append(&out," ");mr_text_float(&out,mesh.vertices[i*3+c]);}mr_text_append(&out,"\n");}
+    if(mesh.texcoords)for(int i=0;i<mesh.vertexCount;i++){mr_text_append(&out,"vt ");mr_text_float(&out,mesh.texcoords[i*2]);mr_text_append(&out," ");mr_text_float(&out,1.0f-mesh.texcoords[i*2+1]);mr_text_append(&out,"\n");}
+    if(mesh.normals)for(int i=0;i<mesh.vertexCount;i++){mr_text_append(&out,"vn ");for(int c=0;c<3;c++){if(c)mr_text_append(&out," ");mr_text_float(&out,mesh.normals[i*3+c]);}mr_text_append(&out,"\n");}
+    for(int triangle=0;triangle<mesh.triangleCount;triangle++){mr_text_append(&out,"f");for(int corner=0;corner<3;corner++){int index=(mesh.indices?mesh.indices[triangle*3+corner]:triangle*3+corner)+1;if(index<1||index>mesh.vertexCount){out.failed=true;break;}mr_text_append(&out," ");mr_text_integer(&out,index);if(mesh.texcoords){mr_text_append(&out,"/");mr_text_integer(&out,index);if(mesh.normals){mr_text_append(&out,"/");mr_text_integer(&out,index);}}else if(mesh.normals){mr_text_append(&out,"//");mr_text_integer(&out,index);}}mr_text_append(&out,"\n");}
+    return mr_text_save(&out,fileName);
+}
+bool ExportMeshAsCode(Mesh mesh,const char *fileName){
+    if(!fileName||!mesh.vertices||mesh.vertexCount<=0)return false;MRTextBuilder out={0};mr_text_append(&out,"/* Mesh exported by RayGPU */\n#pragma once\n\n#define MESH_VERTEX_COUNT ");mr_text_integer(&out,mesh.vertexCount);mr_text_append(&out,"\n#define MESH_TRIANGLE_COUNT ");mr_text_integer(&out,mesh.triangleCount);mr_text_append(&out,"\n\nstatic const float meshVertices[] = {");
+    for(int i=0;i<mesh.vertexCount*3;i++){if(i)mr_text_append(&out,",");if(i%9==0)mr_text_append(&out,"\n    ");mr_text_float(&out,mesh.vertices[i]);mr_text_append(&out,"f");}mr_text_append(&out,"\n};\n");
+    if(mesh.texcoords){mr_text_append(&out,"\nstatic const float meshTexcoords[] = {");for(int i=0;i<mesh.vertexCount*2;i++){if(i)mr_text_append(&out,",");if(i%8==0)mr_text_append(&out,"\n    ");mr_text_float(&out,mesh.texcoords[i]);mr_text_append(&out,"f");}mr_text_append(&out,"\n};\n");}
+    if(mesh.normals){mr_text_append(&out,"\nstatic const float meshNormals[] = {");for(int i=0;i<mesh.vertexCount*3;i++){if(i)mr_text_append(&out,",");if(i%9==0)mr_text_append(&out,"\n    ");mr_text_float(&out,mesh.normals[i]);mr_text_append(&out,"f");}mr_text_append(&out,"\n};\n");}
+    if(mesh.colors){mr_text_append(&out,"\nstatic const unsigned char meshColors[] = {");for(int i=0;i<mesh.vertexCount*4;i++){if(i)mr_text_append(&out,",");if(i%16==0)mr_text_append(&out,"\n    ");mr_text_integer(&out,mesh.colors[i]);}mr_text_append(&out,"\n};\n");}
+    if(mesh.indices){mr_text_append(&out,"\nstatic const unsigned short meshIndices[] = {");for(int i=0;i<mesh.triangleCount*3;i++){if(i)mr_text_append(&out,",");if(i%12==0)mr_text_append(&out,"\n    ");mr_text_integer(&out,mesh.indices[i]);}mr_text_append(&out,"\n};\n");}
+    return mr_text_save(&out,fileName);
 }
 typedef enum MRJsonType { MR_JSON_OBJECT,MR_JSON_ARRAY,MR_JSON_STRING,MR_JSON_VALUE } MRJsonType;
 typedef struct MRJsonToken { int start,end,parent; MRJsonType type; } MRJsonToken;

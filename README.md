@@ -185,13 +185,15 @@ Opening `index.html` through a `file://` URL is not supported.
 - Complete raylib 2D shapes, gradients, polygons, splines, 2D collisions, 2D
   cameras, and screen/world conversion.
 - Perspective and orthographic 3D cameras, depth buffering, screen/world rays,
-  world-to-screen projection, cubes, spheres, cylinders, planes, grids, 3D
-  lines/triangles, wireframes, and basic 3D collision queries.
+  world-to-screen projection, cubes, textured cubes, billboards, spheres,
+  cylinders, planes, grids, 3D lines/triangles, wireframes, and basic 3D
+  collision queries.
 - Raylib-compatible `Mesh`, `Material`, and `Model` structures; mesh upload and
   updates, persistent WebGPU vertex/index buffers, solid/wire/point model
   drawing, real GPU instancing, mesh/model bounds, mesh ray collisions, and
   polygon, plane, cube, sphere, hemisphere, cylinder, cone, torus, knot,
-  heightmap, and cubic-map mesh generators, plus tangent generation.
+  heightmap, and cubic-map mesh generators, tangent generation, OBJ export,
+  and C header export.
 - A dedicated GPU 3D pipeline with model/view/projection transforms in WGSL,
   hardware clipping, perspective-correct texture interpolation, depth testing,
   nonuniform-scale-safe normals, ambient light, directional diffuse light, and
@@ -216,8 +218,9 @@ Opening `index.html` through a `file://` URL is not supported.
   rotated text, measurement, and glyph lookup.
 - WAV loading from files or memory and sound playback with pause, resume,
   volume, pitch, pan, and sample updates.
-- Binary/text file loading, path inspection, memory allocation, random-number
-  utilities, and common color/text helpers.
+- Binary/text file loading and saving, path inspection, memory allocation,
+  random-number utilities, and common color/text helpers. Browser saves use a
+  normal file download.
 - Growable WebAssembly memory: 64 MB initially, up to 2 GB or the browser's
   available limit.
 
@@ -286,17 +289,16 @@ and WGSL stay synchronized. See the shader in [`main.c`](main.c) or
 - Gamepads, vibration, touch input, gestures, and cursor management.
 - Fullscreen, borderless mode, monitor selection/information, window icons,
   opacity, clipboard, and dropped files.
-- File saving, directory listing, URL opening, compression, Base64, hashes,
-  logging callbacks, and automation events.
+- Directory listing, URL opening, compression, Base64, hashes, logging
+  callbacks, and automation events.
 
 ## Remaining 3D work
 
-- Mesh downloads and mesh export.
 - OBJ loading, retained node/scene hierarchies, sparse accessors, morph targets,
   and compressed mesh extensions.
 - Configurable lights, fog, full PBR map shading, custom 3D shaders, and
   additional samplers.
-- Textured 3D primitives and skyboxes.
+- Skyboxes.
 - GPU skinning and support for multiple armatures.
 - The remaining mesh, model, and ray collision helpers.
 

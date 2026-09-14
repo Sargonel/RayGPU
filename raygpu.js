@@ -219,6 +219,20 @@
                 new Uint8Array(wasm.memory.buffer, destination, size).set(data);
                 return size;
             },
+            file_write: (namePointer, dataPointer, size) => {
+                if (size < 0) return 0;
+                const name = readText(namePointer) || "download.bin";
+                const data = new Uint8Array(wasm.memory.buffer, dataPointer, size).slice();
+                const url = URL.createObjectURL(new Blob([data], {type: "application/octet-stream"}));
+                const link = document.createElement("a");
+                link.href = url;
+                link.download = name.split(/[\\/]/).pop() || "download.bin";
+                document.body.appendChild(link);
+                link.click();
+                link.remove();
+                setTimeout(() => URL.revokeObjectURL(url), 0);
+                return 1;
+            },
             init: (width, height, title) => {
                 canvas.width = width; canvas.height = height;
                 document.title = readText(title);
