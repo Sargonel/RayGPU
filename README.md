@@ -278,12 +278,13 @@ order. New shaders should use declarations so misspellings are detected and C
 and WGSL stay synchronized. See the shader in [`main.c`](main.c) or
 [`examples/snake.c`](examples/snake.c) for complete examples.
 
-## Remaining 2D work
+## Remaining core, 2D, and audio work
 
-- OGG, MP3, and FLAC decoding, streamed music, procedural audio streams, and
-  audio processors.
-- Image and generated texture mipmaps, animated GIF frames, image exporting,
-  screenshots, and GPU texture readback.
+- OGG, MP3, QOA, optional FLAC, XM, and MOD decoding; streamed music;
+  procedural audio streams and processors; and wave exporting.
+- Additional raylib image formats such as RAW, QOI, and DDS; image and texture
+  mipmaps; animated GIF frames; image exporting; screenshots; and GPU texture
+  readback.
 - Image-based fonts, font-data extraction, and font-atlas export helpers.
 - Extra shader texture samplers and shader attribute reflection.
 - Gamepads, vibration, touch input, gestures, and cursor management.
@@ -294,13 +295,13 @@ and WGSL stay synchronized. See the shader in [`main.c`](main.c) or
 
 ## Remaining 3D work
 
-- OBJ loading, retained node/scene hierarchies, sparse accessors, morph targets,
-  and compressed mesh extensions.
-- Configurable lights, fog, full PBR map shading, custom 3D shaders, and
-  additional samplers.
-- Skyboxes.
-- GPU skinning and support for multiple armatures.
-- The remaining mesh, model, and ray collision helpers.
+- OBJ/MTL, IQM, VOX, and M3D model loading, plus `LoadMaterials()`.
+- glTF sparse accessors, morph targets, scene selection, and compressed mesh
+  extensions.
+- Material custom shaders, additional texture samplers, and actual GPU
+  skinning.
+- Optional advanced rendering features such as configurable lights, fog, PBR
+  shading, and skyboxes.
 
 ## Current limits
 
