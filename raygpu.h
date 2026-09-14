@@ -448,6 +448,9 @@ bool SaveFileData(const char *fileName,void *data,int dataSize);
 char *LoadFileText(const char *fileName);
 void UnloadFileText(char *text);
 bool SaveFileText(const char *fileName,char *text);
+char *EncodeDataBase64(const unsigned char *data,int dataSize,int *outputSize);
+unsigned char *DecodeDataBase64(const unsigned char *data,int *outputSize);
+unsigned int ComputeCRC32(unsigned char *data,int dataSize);
 bool FileExists(const char *fileName);
 bool DirectoryExists(const char *dirPath);
 bool IsFileExtension(const char *fileName,const char *ext);
@@ -1460,6 +1463,27 @@ bool SaveFileText(const char *fileName,char *text) {
     if (!text) return false;
     int length=0; while (text[length]) length++;
     return SaveFileData(fileName,text,length);
+}
+char *EncodeDataBase64(const unsigned char *data,int dataSize,int *outputSize) {
+    static const char table[]="ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    if(outputSize)*outputSize=0;if(dataSize<0||(!data&&dataSize>0))return NULL;
+    if(dataSize>0x5ffffffd)return NULL;int length=((dataSize+2)/3)*4;
+    char *encoded=MemAlloc((unsigned int)length+1);if(!encoded)return NULL;
+    int input=0,output=0;while(input<dataSize){unsigned int a=data[input++],b=input<dataSize?data[input++]:0,c=input<dataSize?data[input++]:0,triple=(a<<16)|(b<<8)|c;encoded[output++]=table[(triple>>18)&63];encoded[output++]=table[(triple>>12)&63];encoded[output++]=table[(triple>>6)&63];encoded[output++]=table[triple&63];}
+    int remainder=dataSize%3;if(remainder==1){encoded[length-2]='=';encoded[length-1]='=';}else if(remainder==2)encoded[length-1]='=';encoded[length]=0;if(outputSize)*outputSize=length;return encoded;
+}
+static int mr_base64_value(unsigned char c){if(c>='A'&&c<='Z')return c-'A';if(c>='a'&&c<='z')return c-'a'+26;if(c>='0'&&c<='9')return c-'0'+52;if(c=='+')return 62;if(c=='/')return 63;return-1;}
+unsigned char *DecodeDataBase64(const unsigned char *data,int *outputSize) {
+    if(outputSize)*outputSize=0;if(!data)return NULL;int symbols=0,padding=0;
+    for(int i=0;data[i];i++){unsigned char c=data[i];if(c==' '||c=='\t'||c=='\r'||c=='\n')continue;if(c=='='){padding++;symbols++;}else{if(mr_base64_value(c)<0||padding)return NULL;symbols++;}}
+    if(symbols%4||padding>2)return NULL;int length=(symbols/4)*3-padding;unsigned char *decoded=MemAlloc((unsigned int)(length>0?length:1));if(!decoded)return NULL;
+    int values[4],count=0,output=0;for(int i=0;data[i];i++){unsigned char c=data[i];if(c==' '||c=='\t'||c=='\r'||c=='\n')continue;values[count++]=c=='='?0:mr_base64_value(c);if(count==4){unsigned int triple=((unsigned int)values[0]<<18)|((unsigned int)values[1]<<12)|((unsigned int)values[2]<<6)|(unsigned int)values[3];if(output<length)decoded[output++]=(unsigned char)(triple>>16);if(output<length)decoded[output++]=(unsigned char)(triple>>8);if(output<length)decoded[output++]=(unsigned char)triple;count=0;}}
+    if(outputSize)*outputSize=length;return decoded;
+}
+unsigned int ComputeCRC32(unsigned char *data,int dataSize) {
+    if(!data||dataSize<=0)return 0;unsigned int crc=0xffffffffu;
+    for(int i=0;i<dataSize;i++){crc^=data[i];for(int bit=0;bit<8;bit++)crc=(crc>>1)^(0xedb88320u&((unsigned int)-(int)(crc&1u)));}
+    return~crc;
 }
 bool DirectoryExists(const char *path) {
 #ifdef _WIN32

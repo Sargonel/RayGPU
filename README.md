@@ -219,8 +219,8 @@ Opening `index.html` through a `file://` URL is not supported.
 - WAV loading from files or memory and sound playback with pause, resume,
   volume, pitch, pan, and sample updates.
 - Binary/text file loading and saving, path inspection, memory allocation,
-  random-number utilities, and common color/text helpers. Browser saves use a
-  normal file download.
+  Base64 encoding/decoding, CRC32 hashing, random-number utilities, and common
+  color/text helpers. Browser saves use a normal file download.
 - Growable WebAssembly memory: 64 MB initially, up to 2 GB or the browser's
   available limit.
 
@@ -289,7 +289,7 @@ and WGSL stay synchronized. See the shader in [`main.c`](main.c) or
 - Gamepads, vibration, touch input, gestures, and cursor management.
 - Fullscreen, borderless mode, monitor selection/information, window icons,
   opacity, clipboard, and dropped files.
-- Directory listing, URL opening, compression, Base64, hashes, logging
+- Directory listing, URL opening, compression, MD5/SHA1 hashes, logging
   callbacks, and automation events.
 
 ## Remaining 3D work
