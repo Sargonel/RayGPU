@@ -289,6 +289,9 @@ void DrawModelWires(Model model,Vector3 position,float scale,Color tint);
 void DrawModelWiresEx(Model model,Vector3 position,Vector3 rotationAxis,float rotationAngle,Vector3 scale,Color tint);
 void DrawModelPoints(Model model,Vector3 position,float scale,Color tint);
 void DrawModelPointsEx(Model model,Vector3 position,Vector3 rotationAxis,float rotationAngle,Vector3 scale,Color tint);
+void DrawBillboard(Camera camera,Texture2D texture,Vector3 position,float scale,Color tint);
+void DrawBillboardRec(Camera camera,Texture2D texture,Rectangle source,Vector3 position,Vector2 size,Color tint);
+void DrawBillboardPro(Camera camera,Texture2D texture,Rectangle source,Vector3 position,Vector3 up,Vector2 size,Vector2 origin,float rotation,Color tint);
 void DrawBoundingBox(BoundingBox box,Color color);
 void UploadMesh(Mesh *mesh,bool dynamic);
 void UpdateMeshBuffer(Mesh mesh,int index,const void *data,int dataSize,int offset);
@@ -296,9 +299,18 @@ void UnloadMesh(Mesh mesh);
 void DrawMesh(Mesh mesh,Material material,Matrix transform);
 void DrawMeshInstanced(Mesh mesh,Material material,const Matrix *transforms,int instances);
 BoundingBox GetMeshBoundingBox(Mesh mesh);
+void GenMeshTangents(Mesh *mesh);
+Mesh GenMeshPoly(int sides,float radius);
 Mesh GenMeshPlane(float width,float length,int resX,int resZ);
 Mesh GenMeshCube(float width,float height,float length);
 Mesh GenMeshSphere(float radius,int rings,int slices);
+Mesh GenMeshHemiSphere(float radius,int rings,int slices);
+Mesh GenMeshCylinder(float radius,float height,int slices);
+Mesh GenMeshCone(float radius,float height,int slices);
+Mesh GenMeshTorus(float radius,float size,int radSeg,int sides);
+Mesh GenMeshKnot(float radius,float size,int radSeg,int sides);
+Mesh GenMeshHeightmap(Image heightmap,Vector3 size);
+Mesh GenMeshCubicmap(Image cubicmap,Vector3 cubeSize);
 Material LoadMaterialDefault(void);
 bool IsMaterialValid(Material material);
 void UnloadMaterial(Material material);
@@ -15310,12 +15322,92 @@ void DrawModelWiresEx(Model model,Vector3 position,Vector3 axis,float angle,Vect
 void DrawModelWires(Model model,Vector3 position,float scale,Color tint){DrawModelWiresEx(model,position,(Vector3){0,1,0},0,(Vector3){scale,scale,scale},tint);}
 void DrawModelPointsEx(Model model,Vector3 position,Vector3 axis,float angle,Vector3 scale,Color tint){mr_draw_model_internal(model,mr_model_matrix(position,axis,angle,scale),tint,2);}
 void DrawModelPoints(Model model,Vector3 position,float scale,Color tint){DrawModelPointsEx(model,position,(Vector3){0,1,0},0,(Vector3){scale,scale,scale},tint);}
+void DrawBillboardPro(Camera camera,Texture2D texture,Rectangle source,Vector3 position,Vector3 up,Vector2 size,Vector2 origin,float rotation,Color tint){
+    if(!mr.camera3dActive||!IsTextureValid(texture)||texture.width<=0||texture.height<=0)return;
+    Vector3 forward=mr_v3_norm(mr_v3_sub(camera.position,position));
+    Vector3 upAxis=mr_v3_norm(up);if(mr_v3_len(upAxis)<0.0001f)upAxis=(Vector3){0,1,0};
+    Vector3 right=mr_v3_norm(mr_v3_cross(upAxis,forward));
+    if(mr_v3_len(right)<0.0001f){Vector3 fallback=(forward.y>-0.9f&&forward.y<0.9f)?(Vector3){0,1,0}:(Vector3){1,0,0};right=mr_v3_norm(mr_v3_cross(fallback,forward));}
+    upAxis=mr_v3_norm(mr_v3_cross(forward,right));
+    float radians=rotation*MR_DEG2RAD,c=cosf(radians),s=sinf(radians);
+    float x[4]={-origin.x,size.x-origin.x,size.x-origin.x,-origin.x};
+    float y[4]={size.y-origin.y,size.y-origin.y,-origin.y,-origin.y};
+    Vector3 p[4];for(int i=0;i<4;i++){float xr=x[i]*c-y[i]*s,yr=x[i]*s+y[i]*c;p[i]=mr_v3_add(position,mr_v3_add(mr_v3_scale(right,xr),mr_v3_scale(upAxis,yr)));}
+    float u0=source.x/texture.width,v0=source.y/texture.height,u1=(source.x+source.width)/texture.width,v1=(source.y+source.height)/texture.height;
+    Vector2 uv[4]={{u0,v0},{u1,v0},{u1,v1},{u0,v1}};MRProjected3D projected[4];for(int i=0;i<4;i++)projected[i]=mr_project3d_ex(p[i],camera,mr.targetWidth,mr.targetHeight);
+    mr_projected_triangle_uv(projected[0],projected[2],projected[1],uv[0],uv[2],uv[1],tint,tint,tint,texture.id);
+    mr_projected_triangle_uv(projected[0],projected[3],projected[2],uv[0],uv[3],uv[2],tint,tint,tint,texture.id);
+}
+void DrawBillboardRec(Camera camera,Texture2D texture,Rectangle source,Vector3 position,Vector2 size,Color tint){DrawBillboardPro(camera,texture,source,position,camera.up,size,(Vector2){size.x*0.5f,size.y*0.5f},0,tint);}
+void DrawBillboard(Camera camera,Texture2D texture,Vector3 position,float scale,Color tint){float aspect=texture.height>0?(float)texture.width/texture.height:1;DrawBillboardRec(camera,texture,(Rectangle){0,0,(float)texture.width,(float)texture.height},position,(Vector2){scale*aspect,scale},tint);}
 BoundingBox GetModelBoundingBox(Model model){BoundingBox result={0};bool first=true;if(!IsModelValid(model))return result;for(int i=0;i<model.meshCount;i++){BoundingBox box=GetMeshBoundingBox(model.meshes[i]);Vector3 corners[8]={{box.min.x,box.min.y,box.min.z},{box.max.x,box.min.y,box.min.z},{box.min.x,box.max.y,box.min.z},{box.max.x,box.max.y,box.min.z},{box.min.x,box.min.y,box.max.z},{box.max.x,box.min.y,box.max.z},{box.min.x,box.max.y,box.max.z},{box.max.x,box.max.y,box.max.z}};for(int j=0;j<8;j++){Vector3 p=mr_v3_transform(corners[j],model.transform);if(first){result.min=result.max=p;first=false;}if(p.x<result.min.x)result.min.x=p.x;if(p.y<result.min.y)result.min.y=p.y;if(p.z<result.min.z)result.min.z=p.z;if(p.x>result.max.x)result.max.x=p.x;if(p.y>result.max.y)result.max.y=p.y;if(p.z>result.max.z)result.max.z=p.z;}}return result;}
 void DrawBoundingBox(BoundingBox b,Color color){Vector3 size={b.max.x-b.min.x,b.max.y-b.min.y,b.max.z-b.min.z},center={(b.min.x+b.max.x)/2,(b.min.y+b.max.y)/2,(b.min.z+b.max.z)/2};DrawCubeWiresV(center,size,color);}
 RayCollision GetRayCollisionMesh(Ray ray,Mesh mesh,Matrix transform){RayCollision closest={0};if(!mesh.vertices)return closest;for(int t=0;t<mesh.triangleCount;t++){int ids[3]={mesh.indices?mesh.indices[t*3]:t*3,mesh.indices?mesh.indices[t*3+1]:t*3+1,mesh.indices?mesh.indices[t*3+2]:t*3+2};if(ids[2]>=mesh.vertexCount)continue;Vector3 p[3];for(int j=0;j<3;j++)p[j]=mr_v3_transform((Vector3){mesh.vertices[ids[j]*3],mesh.vertices[ids[j]*3+1],mesh.vertices[ids[j]*3+2]},transform);RayCollision hit=GetRayCollisionTriangle(ray,p[0],p[1],p[2]);if(hit.hit&&(!closest.hit||hit.distance<closest.distance))closest=hit;}return closest;}
+void GenMeshTangents(Mesh *mesh){
+    if(!mesh||!mesh->vertices||!mesh->normals||!mesh->texcoords||mesh->vertexCount<=0||mesh->triangleCount<=0)return;
+    Vector3 *tan1=MemAlloc((unsigned int)mesh->vertexCount*sizeof(Vector3)),*tan2=MemAlloc((unsigned int)mesh->vertexCount*sizeof(Vector3));
+    float *tangents=MemAlloc((unsigned int)mesh->vertexCount*4*sizeof(float));
+    if(!tan1||!tan2||!tangents){MemFree(tan1);MemFree(tan2);MemFree(tangents);return;}
+    memset(tan1,0,(size_t)mesh->vertexCount*sizeof(Vector3));memset(tan2,0,(size_t)mesh->vertexCount*sizeof(Vector3));
+    for(int triangle=0;triangle<mesh->triangleCount;triangle++){
+        int id[3]={mesh->indices?mesh->indices[triangle*3]:triangle*3,mesh->indices?mesh->indices[triangle*3+1]:triangle*3+1,mesh->indices?mesh->indices[triangle*3+2]:triangle*3+2};
+        if(id[0]<0||id[1]<0||id[2]<0||id[0]>=mesh->vertexCount||id[1]>=mesh->vertexCount||id[2]>=mesh->vertexCount)continue;
+        Vector3 p[3];Vector2 uv[3];for(int i=0;i<3;i++){p[i]=(Vector3){mesh->vertices[id[i]*3],mesh->vertices[id[i]*3+1],mesh->vertices[id[i]*3+2]};uv[i]=(Vector2){mesh->texcoords[id[i]*2],mesh->texcoords[id[i]*2+1]};}
+        Vector3 e1=mr_v3_sub(p[1],p[0]),e2=mr_v3_sub(p[2],p[0]);float s1=uv[1].x-uv[0].x,s2=uv[2].x-uv[0].x,t1=uv[1].y-uv[0].y,t2=uv[2].y-uv[0].y,den=s1*t2-s2*t1;if(den>-0.000001f&&den<0.000001f)continue;float inv=1/den;
+        Vector3 sdir={(t2*e1.x-t1*e2.x)*inv,(t2*e1.y-t1*e2.y)*inv,(t2*e1.z-t1*e2.z)*inv},tdir={(s1*e2.x-s2*e1.x)*inv,(s1*e2.y-s2*e1.y)*inv,(s1*e2.z-s2*e1.z)*inv};
+        for(int i=0;i<3;i++){tan1[id[i]]=mr_v3_add(tan1[id[i]],sdir);tan2[id[i]]=mr_v3_add(tan2[id[i]],tdir);}
+    }
+    for(int i=0;i<mesh->vertexCount;i++){Vector3 n={mesh->normals[i*3],mesh->normals[i*3+1],mesh->normals[i*3+2]},t=mr_v3_sub(tan1[i],mr_v3_scale(n,mr_v3_dot(n,tan1[i])));if(mr_v3_len(t)<0.0001f){Vector3 helper=(n.y>-0.9f&&n.y<0.9f)?(Vector3){0,1,0}:(Vector3){1,0,0};t=mr_v3_cross(helper,n);}t=mr_v3_norm(t);tangents[i*4]=t.x;tangents[i*4+1]=t.y;tangents[i*4+2]=t.z;tangents[i*4+3]=mr_v3_dot(mr_v3_cross(n,t),tan2[i])<0?-1:1;}
+    MemFree(mesh->tangents);mesh->tangents=tangents;MemFree(tan1);MemFree(tan2);
+}
+static Mesh mr_mesh_allocate(int triangleCount){
+    Mesh mesh={0};if(triangleCount<=0||triangleCount>1000000)return mesh;mesh.triangleCount=triangleCount;mesh.vertexCount=triangleCount*3;
+    mesh.vertices=MemAlloc((unsigned int)mesh.vertexCount*3*sizeof(float));mesh.normals=MemAlloc((unsigned int)mesh.vertexCount*3*sizeof(float));mesh.texcoords=MemAlloc((unsigned int)mesh.vertexCount*2*sizeof(float));
+    if(!mesh.vertices||!mesh.normals||!mesh.texcoords){UnloadMesh(mesh);return(Mesh){0};}return mesh;
+}
+static void mr_mesh_vertex(Mesh *mesh,int index,Vector3 position,Vector3 normal,Vector2 uv){mesh->vertices[index*3]=position.x;mesh->vertices[index*3+1]=position.y;mesh->vertices[index*3+2]=position.z;mesh->normals[index*3]=normal.x;mesh->normals[index*3+1]=normal.y;mesh->normals[index*3+2]=normal.z;mesh->texcoords[index*2]=uv.x;mesh->texcoords[index*2+1]=uv.y;}
+static void mr_mesh_triangle(Mesh *mesh,int *vertex,Vector3 a,Vector3 b,Vector3 c,Vector3 normal,Vector2 ua,Vector2 ub,Vector2 uc){mr_mesh_vertex(mesh,(*vertex)++,a,normal,ua);mr_mesh_vertex(mesh,(*vertex)++,b,normal,ub);mr_mesh_vertex(mesh,(*vertex)++,c,normal,uc);}
+Mesh GenMeshPoly(int sides,float radius){
+    if(sides<3)sides=3;Mesh mesh=mr_mesh_allocate(sides);if(!mesh.vertices)return mesh;int vertex=0;
+    for(int i=0;i<sides;i++){float a=2*MR_PI*i/sides,b=2*MR_PI*(i+1)/sides;mr_mesh_triangle(&mesh,&vertex,(Vector3){0,0,0},(Vector3){cosf(b)*radius,0,sinf(b)*radius},(Vector3){cosf(a)*radius,0,sinf(a)*radius},(Vector3){0,1,0},(Vector2){0.5f,0.5f},(Vector2){cosf(b)*0.5f+0.5f,sinf(b)*0.5f+0.5f},(Vector2){cosf(a)*0.5f+0.5f,sinf(a)*0.5f+0.5f});}
+    UploadMesh(&mesh,false);return mesh;
+}
 Mesh GenMeshPlane(float width,float length,int resX,int resZ){if(resX<1)resX=1;if(resZ<1)resZ=1;Mesh mesh={0};mesh.triangleCount=resX*resZ*2;mesh.vertexCount=mesh.triangleCount*3;mesh.vertices=MemAlloc(mesh.vertexCount*3*sizeof(float));mesh.normals=MemAlloc(mesh.vertexCount*3*sizeof(float));mesh.texcoords=MemAlloc(mesh.vertexCount*2*sizeof(float));if(!mesh.vertices||!mesh.normals||!mesh.texcoords){UnloadMesh(mesh);return(Mesh){0};}int v=0;for(int z=0;z<resZ;z++)for(int x=0;x<resX;x++){float x0=-width/2+width*x/resX,x1=-width/2+width*(x+1)/resX,z0=-length/2+length*z/resZ,z1=-length/2+length*(z+1)/resZ;Vector3 p[6]={{x0,0,z0},{x1,0,z1},{x1,0,z0},{x0,0,z0},{x0,0,z1},{x1,0,z1}};Vector2 uv[6]={{(float)x/resX,(float)z/resZ},{(float)(x+1)/resX,(float)(z+1)/resZ},{(float)(x+1)/resX,(float)z/resZ},{(float)x/resX,(float)z/resZ},{(float)x/resX,(float)(z+1)/resZ},{(float)(x+1)/resX,(float)(z+1)/resZ}};for(int i=0;i<6;i++,v++){mesh.vertices[v*3]=p[i].x;mesh.vertices[v*3+1]=p[i].y;mesh.vertices[v*3+2]=p[i].z;mesh.normals[v*3+1]=1;mesh.texcoords[v*2]=uv[i].x;mesh.texcoords[v*2+1]=uv[i].y;}}UploadMesh(&mesh,false);return mesh;}
 Mesh GenMeshCube(float width,float height,float length){Mesh mesh={0};mesh.triangleCount=12;mesh.vertexCount=36;mesh.vertices=MemAlloc(108*sizeof(float));mesh.normals=MemAlloc(108*sizeof(float));mesh.texcoords=MemAlloc(72*sizeof(float));if(!mesh.vertices||!mesh.normals||!mesh.texcoords){UnloadMesh(mesh);return(Mesh){0};}Vector3 p[8]={{-width/2,-height/2,-length/2},{width/2,-height/2,-length/2},{width/2,height/2,-length/2},{-width/2,height/2,-length/2},{-width/2,-height/2,length/2},{width/2,-height/2,length/2},{width/2,height/2,length/2},{-width/2,height/2,length/2}};int faces[6][4]={{0,3,2,1},{4,5,6,7},{0,1,5,4},{3,7,6,2},{0,4,7,3},{1,2,6,5}};Vector3 normals[6]={{0,0,-1},{0,0,1},{0,-1,0},{0,1,0},{-1,0,0},{1,0,0}};int v=0;int order[6]={0,1,2,0,2,3};Vector2 uv[4]={{0,1},{1,1},{1,0},{0,0}};for(int f=0;f<6;f++)for(int j=0;j<6;j++,v++){int q=order[j];Vector3 point=p[faces[f][q]];mesh.vertices[v*3]=point.x;mesh.vertices[v*3+1]=point.y;mesh.vertices[v*3+2]=point.z;mesh.normals[v*3]=normals[f].x;mesh.normals[v*3+1]=normals[f].y;mesh.normals[v*3+2]=normals[f].z;mesh.texcoords[v*2]=uv[q].x;mesh.texcoords[v*2+1]=uv[q].y;}UploadMesh(&mesh,false);return mesh;}
 Mesh GenMeshSphere(float radius,int rings,int slices){if(rings<2)rings=2;if(slices<3)slices=3;Mesh mesh={0};mesh.triangleCount=rings*slices*2;mesh.vertexCount=mesh.triangleCount*3;mesh.vertices=MemAlloc(mesh.vertexCount*3*sizeof(float));mesh.normals=MemAlloc(mesh.vertexCount*3*sizeof(float));mesh.texcoords=MemAlloc(mesh.vertexCount*2*sizeof(float));if(!mesh.vertices||!mesh.normals||!mesh.texcoords){UnloadMesh(mesh);return(Mesh){0};}int v=0;for(int y=0;y<rings;y++)for(int x=0;x<slices;x++){float a0=-MR_PI/2+MR_PI*y/rings,a1=-MR_PI/2+MR_PI*(y+1)/rings,b0=2*MR_PI*x/slices,b1=2*MR_PI*(x+1)/slices;Vector3 p[6]={{cosf(a0)*cosf(b0),sinf(a0),cosf(a0)*sinf(b0)},{cosf(a0)*cosf(b1),sinf(a0),cosf(a0)*sinf(b1)},{cosf(a1)*cosf(b1),sinf(a1),cosf(a1)*sinf(b1)},{cosf(a0)*cosf(b0),sinf(a0),cosf(a0)*sinf(b0)},{cosf(a1)*cosf(b1),sinf(a1),cosf(a1)*sinf(b1)},{cosf(a1)*cosf(b0),sinf(a1),cosf(a1)*sinf(b0)}};Vector2 uv[6]={{(float)x/slices,(float)y/rings},{(float)(x+1)/slices,(float)y/rings},{(float)(x+1)/slices,(float)(y+1)/rings},{(float)x/slices,(float)y/rings},{(float)(x+1)/slices,(float)(y+1)/rings},{(float)x/slices,(float)(y+1)/rings}};for(int i=0;i<6;i++,v++){mesh.vertices[v*3]=p[i].x*radius;mesh.vertices[v*3+1]=p[i].y*radius;mesh.vertices[v*3+2]=p[i].z*radius;mesh.normals[v*3]=p[i].x;mesh.normals[v*3+1]=p[i].y;mesh.normals[v*3+2]=p[i].z;mesh.texcoords[v*2]=uv[i].x;mesh.texcoords[v*2+1]=uv[i].y;}}UploadMesh(&mesh,false);return mesh;}
+Mesh GenMeshHemiSphere(float radius,int rings,int slices){
+    if(rings<1)rings=1;if(slices<3)slices=3;Mesh mesh=mr_mesh_allocate(rings*slices*2);if(!mesh.vertices)return mesh;int vertex=0;
+    for(int y=0;y<rings;y++)for(int x=0;x<slices;x++){float a0=MR_PI*0.5f*y/rings,a1=MR_PI*0.5f*(y+1)/rings,b0=2*MR_PI*x/slices,b1=2*MR_PI*(x+1)/slices;Vector3 n0={cosf(a0)*cosf(b0),sinf(a0),cosf(a0)*sinf(b0)},n1={cosf(a0)*cosf(b1),sinf(a0),cosf(a0)*sinf(b1)},n2={cosf(a1)*cosf(b1),sinf(a1),cosf(a1)*sinf(b1)},n3={cosf(a1)*cosf(b0),sinf(a1),cosf(a1)*sinf(b0)};Vector3 p[4]={mr_v3_scale(n0,radius),mr_v3_scale(n1,radius),mr_v3_scale(n2,radius),mr_v3_scale(n3,radius)};Vector2 uv0={(float)x/slices,(float)y/rings},uv1={(float)(x+1)/slices,(float)y/rings},uv2={(float)(x+1)/slices,(float)(y+1)/rings},uv3={(float)x/slices,(float)(y+1)/rings};mr_mesh_vertex(&mesh,vertex++,p[0],n0,uv0);mr_mesh_vertex(&mesh,vertex++,p[1],n1,uv1);mr_mesh_vertex(&mesh,vertex++,p[2],n2,uv2);mr_mesh_vertex(&mesh,vertex++,p[0],n0,uv0);mr_mesh_vertex(&mesh,vertex++,p[2],n2,uv2);mr_mesh_vertex(&mesh,vertex++,p[3],n3,uv3);}
+    UploadMesh(&mesh,false);return mesh;
+}
+static Mesh mr_gen_mesh_cone(float bottomRadius,float topRadius,float height,int slices){
+    if(slices<3)slices=3;int sideTriangles=topRadius>0?slices*2:slices,capTriangles=slices+(topRadius>0?slices:0);Mesh mesh=mr_mesh_allocate(sideTriangles+capTriangles);if(!mesh.vertices)return mesh;int vertex=0;float slope=height!=0?(bottomRadius-topRadius)/height:0;
+    for(int i=0;i<slices;i++){float a=2*MR_PI*i/slices,b=2*MR_PI*(i+1)/slices;Vector3 p0={cosf(a)*bottomRadius,0,sinf(a)*bottomRadius},p1={cosf(b)*bottomRadius,0,sinf(b)*bottomRadius},q0={cosf(a)*topRadius,height,sinf(a)*topRadius},q1={cosf(b)*topRadius,height,sinf(b)*topRadius},n0=mr_v3_norm((Vector3){cosf(a),slope,sinf(a)}),n1=mr_v3_norm((Vector3){cosf(b),slope,sinf(b)});Vector2 uv0={(float)i/slices,1},uv1={(float)(i+1)/slices,1},uv2={(float)(i+1)/slices,0},uv3={(float)i/slices,0};if(topRadius>0){mr_mesh_vertex(&mesh,vertex++,p0,n0,uv0);mr_mesh_vertex(&mesh,vertex++,q1,n1,uv2);mr_mesh_vertex(&mesh,vertex++,p1,n1,uv1);mr_mesh_vertex(&mesh,vertex++,p0,n0,uv0);mr_mesh_vertex(&mesh,vertex++,q0,n0,uv3);mr_mesh_vertex(&mesh,vertex++,q1,n1,uv2);}else{mr_mesh_vertex(&mesh,vertex++,p0,n0,uv0);mr_mesh_vertex(&mesh,vertex++,q0,mr_v3_norm(mr_v3_add(n0,n1)),(Vector2){((float)i+0.5f)/slices,0});mr_mesh_vertex(&mesh,vertex++,p1,n1,uv1);}mr_mesh_triangle(&mesh,&vertex,(Vector3){0,0,0},p1,p0,(Vector3){0,-1,0},(Vector2){0.5f,0.5f},(Vector2){cosf(b)*0.5f+0.5f,sinf(b)*0.5f+0.5f},(Vector2){cosf(a)*0.5f+0.5f,sinf(a)*0.5f+0.5f});if(topRadius>0)mr_mesh_triangle(&mesh,&vertex,(Vector3){0,height,0},q0,q1,(Vector3){0,1,0},(Vector2){0.5f,0.5f},(Vector2){cosf(a)*0.5f+0.5f,sinf(a)*0.5f+0.5f},(Vector2){cosf(b)*0.5f+0.5f,sinf(b)*0.5f+0.5f});}
+    UploadMesh(&mesh,false);return mesh;
+}
+Mesh GenMeshCylinder(float radius,float height,int slices){return mr_gen_mesh_cone(radius,radius,height,slices);}
+Mesh GenMeshCone(float radius,float height,int slices){return mr_gen_mesh_cone(radius,0,height,slices);}
+Mesh GenMeshTorus(float radius,float size,int radSeg,int sides){
+    if(radSeg<3)radSeg=3;if(sides<3)sides=3;Mesh mesh=mr_mesh_allocate(radSeg*sides*2);if(!mesh.vertices)return mesh;int vertex=0;
+    for(int r=0;r<radSeg;r++)for(int s=0;s<sides;s++){float a0=2*MR_PI*r/radSeg,a1=2*MR_PI*(r+1)/radSeg,b0=2*MR_PI*s/sides,b1=2*MR_PI*(s+1)/sides;Vector3 p[4],n[4];float aa[4]={a0,a1,a1,a0},bb[4]={b0,b0,b1,b1};for(int i=0;i<4;i++){n[i]=(Vector3){cosf(aa[i])*cosf(bb[i]),sinf(bb[i]),sinf(aa[i])*cosf(bb[i])};p[i]=(Vector3){cosf(aa[i])*(radius+size*cosf(bb[i])),size*sinf(bb[i]),sinf(aa[i])*(radius+size*cosf(bb[i]))};}Vector2 uv[4]={{(float)r/radSeg,(float)s/sides},{(float)(r+1)/radSeg,(float)s/sides},{(float)(r+1)/radSeg,(float)(s+1)/sides},{(float)r/radSeg,(float)(s+1)/sides}};int order[6]={0,2,1,0,3,2};for(int i=0;i<6;i++){int q=order[i];mr_mesh_vertex(&mesh,vertex++,p[q],n[q],uv[q]);}}
+    UploadMesh(&mesh,false);return mesh;
+}
+static Vector3 mr_knot_point(float t,float radius){float r=radius/3.0f;return(Vector3){r*(2+cosf(3*t))*cosf(2*t),r*sinf(3*t),r*(2+cosf(3*t))*sinf(2*t)};}
+Mesh GenMeshKnot(float radius,float size,int radSeg,int sides){
+    if(radSeg<6)radSeg=6;if(sides<3)sides=3;Mesh mesh=mr_mesh_allocate(radSeg*sides*2);if(!mesh.vertices)return mesh;int vertex=0;
+    for(int r=0;r<radSeg;r++){float t0=2*MR_PI*r/radSeg,t1=2*MR_PI*(r+1)/radSeg;Vector3 center[2]={mr_knot_point(t0,radius),mr_knot_point(t1,radius)},right[2],up[2];for(int e=0;e<2;e++){float t=e?t1:t0;Vector3 tangent=mr_v3_norm(mr_v3_sub(mr_knot_point(t+0.001f,radius),mr_knot_point(t-0.001f,radius))),helper=(tangent.y>-0.9f&&tangent.y<0.9f)?(Vector3){0,1,0}:(Vector3){1,0,0};right[e]=mr_v3_norm(mr_v3_cross(helper,tangent));up[e]=mr_v3_norm(mr_v3_cross(tangent,right[e]));}for(int s=0;s<sides;s++){float a=2*MR_PI*s/sides,b=2*MR_PI*(s+1)/sides;Vector3 n[4]={mr_v3_add(mr_v3_scale(right[0],cosf(a)),mr_v3_scale(up[0],sinf(a))),mr_v3_add(mr_v3_scale(right[1],cosf(a)),mr_v3_scale(up[1],sinf(a))),mr_v3_add(mr_v3_scale(right[1],cosf(b)),mr_v3_scale(up[1],sinf(b))),mr_v3_add(mr_v3_scale(right[0],cosf(b)),mr_v3_scale(up[0],sinf(b)))};Vector3 p[4]={mr_v3_add(center[0],mr_v3_scale(n[0],size)),mr_v3_add(center[1],mr_v3_scale(n[1],size)),mr_v3_add(center[1],mr_v3_scale(n[2],size)),mr_v3_add(center[0],mr_v3_scale(n[3],size))};Vector2 uv[4]={{(float)r/radSeg,(float)s/sides},{(float)(r+1)/radSeg,(float)s/sides},{(float)(r+1)/radSeg,(float)(s+1)/sides},{(float)r/radSeg,(float)(s+1)/sides}};int order[6]={0,2,1,0,3,2};for(int i=0;i<6;i++){int q=order[i];mr_mesh_vertex(&mesh,vertex++,p[q],n[q],uv[q]);}}}
+    UploadMesh(&mesh,false);return mesh;
+}
+Mesh GenMeshHeightmap(Image heightmap,Vector3 size){
+    if(!IsImageValid(heightmap)||heightmap.width<2||heightmap.height<2)return(Mesh){0};int cells=(heightmap.width-1)*(heightmap.height-1);Mesh mesh=mr_mesh_allocate(cells*2);if(!mesh.vertices)return mesh;int vertex=0;
+    for(int z=0;z<heightmap.height-1;z++)for(int x=0;x<heightmap.width-1;x++){Vector3 p[4];Vector2 uv[4];int px[4]={x,x+1,x+1,x},pz[4]={z,z,z+1,z+1};for(int i=0;i<4;i++){Color c=GetImageColor(heightmap,px[i],pz[i]);float h=(c.r+c.g+c.b)/(3.0f*255.0f);p[i]=(Vector3){((float)px[i]/(heightmap.width-1)-0.5f)*size.x,h*size.y,((float)pz[i]/(heightmap.height-1)-0.5f)*size.z};uv[i]=(Vector2){(float)px[i]/(heightmap.width-1),(float)pz[i]/(heightmap.height-1)};}Vector3 n0=mr_v3_norm(mr_v3_cross(mr_v3_sub(p[2],p[0]),mr_v3_sub(p[1],p[0]))),n1=mr_v3_norm(mr_v3_cross(mr_v3_sub(p[3],p[0]),mr_v3_sub(p[2],p[0])));mr_mesh_triangle(&mesh,&vertex,p[0],p[2],p[1],n0,uv[0],uv[2],uv[1]);mr_mesh_triangle(&mesh,&vertex,p[0],p[3],p[2],n1,uv[0],uv[3],uv[2]);}
+    UploadMesh(&mesh,false);return mesh;
+}
+Mesh GenMeshCubicmap(Image cubicmap,Vector3 cubeSize){
+    if(!IsImageValid(cubicmap)||cubicmap.width<=0||cubicmap.height<=0)return(Mesh){0};int cubes=0;for(int z=0;z<cubicmap.height;z++)for(int x=0;x<cubicmap.width;x++){Color c=GetImageColor(cubicmap,x,z);if(c.r||c.g||c.b)cubes++;}Mesh mesh=mr_mesh_allocate(cubes*12);if(!mesh.vertices)return mesh;int vertex=0;int faces[6][4]={{0,3,2,1},{4,5,6,7},{0,1,5,4},{3,7,6,2},{0,4,7,3},{1,2,6,5}};Vector3 normals[6]={{0,0,-1},{0,0,1},{0,-1,0},{0,1,0},{-1,0,0},{1,0,0}};int order[6]={0,1,2,0,2,3};Vector2 uv[4]={{0,1},{1,1},{1,0},{0,0}};
+    for(int z=0;z<cubicmap.height;z++)for(int x=0;x<cubicmap.width;x++){Color c=GetImageColor(cubicmap,x,z);if(!(c.r||c.g||c.b))continue;Vector3 center={((float)x-(cubicmap.width-1)*0.5f)*cubeSize.x,cubeSize.y*0.5f,((float)z-(cubicmap.height-1)*0.5f)*cubeSize.z},p[8]={{center.x-cubeSize.x/2,0,center.z-cubeSize.z/2},{center.x+cubeSize.x/2,0,center.z-cubeSize.z/2},{center.x+cubeSize.x/2,cubeSize.y,center.z-cubeSize.z/2},{center.x-cubeSize.x/2,cubeSize.y,center.z-cubeSize.z/2},{center.x-cubeSize.x/2,0,center.z+cubeSize.z/2},{center.x+cubeSize.x/2,0,center.z+cubeSize.z/2},{center.x+cubeSize.x/2,cubeSize.y,center.z+cubeSize.z/2},{center.x-cubeSize.x/2,cubeSize.y,center.z+cubeSize.z/2}};for(int f=0;f<6;f++)for(int i=0;i<6;i++){int q=order[i];mr_mesh_vertex(&mesh,vertex++,p[faces[f][q]],normals[f],uv[q]);}}
+    UploadMesh(&mesh,false);return mesh;
+}
 typedef enum MRJsonType { MR_JSON_OBJECT,MR_JSON_ARRAY,MR_JSON_STRING,MR_JSON_VALUE } MRJsonType;
 typedef struct MRJsonToken { int start,end,parent; MRJsonType type; } MRJsonToken;
 static int mr_json_tokenize(const char *json,int length,MRJsonToken *tokens,int capacity){int count=0,parent=-1;for(int i=0;i<length;){char c=json[i];if(c=='{'||c=='['){if(count>=capacity)return-1;tokens[count]=(MRJsonToken){i,-1,parent,c=='{'?MR_JSON_OBJECT:MR_JSON_ARRAY};parent=count++;i++;}else if(c=='}'||c==']'){if(parent<0)return-1;tokens[parent].end=i+1;parent=tokens[parent].parent;i++;}else if(c=='\"'){int start=++i;while(i<length&&json[i]!='\"'){if(json[i]=='\\'&&i+1<length)i+=2;else i++;}if(i>=length||count>=capacity)return-1;tokens[count++]=(MRJsonToken){start,i,parent,MR_JSON_STRING};i++;}else if(c==' '||c=='\t'||c=='\r'||c=='\n'||c==':'||c==',')i++;else{int start=i;while(i<length&&json[i]!=','&&json[i]!=']'&&json[i]!='}'&&json[i]!=' '&&json[i]!='\t'&&json[i]!='\r'&&json[i]!='\n')i++;if(count>=capacity)return-1;tokens[count++]=(MRJsonToken){start,i,parent,MR_JSON_VALUE};}}return parent==-1?count:-1;}

@@ -125,8 +125,8 @@ The catalog currently contains:
   random values, collision logic, a 2D camera, render textures, scissor
   rectangles, blend modes, texture drawing, and animated shader uniforms.
 - [`examples/basic_3d.c`](examples/basic_3d.c): the shared native/browser depth
-  buffer, perspective camera, 3D primitives, wireframes, grid drawing, and
-  mouse-ray box picking. Its small GLB model is stored in
+  buffer, perspective camera, 3D primitives, generated meshes, billboards,
+  wireframes, grid drawing, and mouse-ray box picking. Its small GLB model is stored in
   [`examples/assets/example.glb`](examples/assets/example.glb) and is published
   with the online catalog.
 
@@ -190,7 +190,8 @@ Opening `index.html` through a `file://` URL is not supported.
 - Raylib-compatible `Mesh`, `Material`, and `Model` structures; mesh upload and
   updates, persistent WebGPU vertex/index buffers, solid/wire/point model
   drawing, real GPU instancing, mesh/model bounds, mesh ray collisions, and
-  plane/cube/sphere mesh generators.
+  polygon, plane, cube, sphere, hemisphere, cylinder, cone, torus, knot,
+  heightmap, and cubic-map mesh generators, plus tangent generation.
 - A dedicated GPU 3D pipeline with model/view/projection transforms in WGSL,
   hardware clipping, perspective-correct texture interpolation, depth testing,
   nonuniform-scale-safe normals, ambient light, directional diffuse light, and
@@ -290,13 +291,12 @@ and WGSL stay synchronized. See the shader in [`main.c`](main.c) or
 
 ## Remaining 3D work
 
-- Mesh downloads, tangent generation, and the remaining procedural mesh
-  generators.
+- Mesh downloads and mesh export.
 - OBJ loading, retained node/scene hierarchies, sparse accessors, morph targets,
   and compressed mesh extensions.
 - Configurable lights, fog, full PBR map shading, custom 3D shaders, and
   additional samplers.
-- Textured 3D primitives, billboards, heightmaps, cubic maps, and skyboxes.
+- Textured 3D primitives and skyboxes.
 - GPU skinning and support for multiple armatures.
 - The remaining mesh, model, and ray collision helpers.
 

@@ -3,8 +3,10 @@
 static Camera3D camera;
 static float orbit;
 static Model glbModel;
+static Model torusModel;
 static ModelAnimation *glbAnimations;
 static int glbAnimationCount;
+static Texture2D billboardTexture;
 
 void Basic3DUpdate(void)
 {
@@ -36,6 +38,10 @@ void Basic3DUpdate(void)
                 DrawModelEx(glbModel, (Vector3){0, 1.0f, 4.5f},
                     (Vector3){0, 1, 0}, orbit*45.0f, (Vector3){0.8f, 0.8f, 0.8f}, WHITE);
             }
+            if (IsModelValid(torusModel)) DrawModelEx(torusModel, (Vector3){0, 1.6f, -4.5f},
+                (Vector3){1, 0, 0}, 65.0f, (Vector3){1, 1, 1}, PURPLE);
+            if (IsTextureValid(billboardTexture)) DrawBillboard(camera, billboardTexture,
+                (Vector3){-4.0f, 4.5f, 2.5f}, 1.4f, WHITE);
             DrawLine3D((Vector3){0, 0, 0}, (Vector3){3, 0, 0}, RED);
             DrawLine3D((Vector3){0, 0, 0}, (Vector3){0, 3, 0}, GREEN);
             DrawLine3D((Vector3){0, 0, 0}, (Vector3){0, 0, 3}, BLUE);
@@ -64,6 +70,12 @@ void Basic3DInit(void)
     };
     glbModel = LoadModel("examples/assets/example.glb");
     glbAnimations = LoadModelAnimations("examples/assets/example.glb", &glbAnimationCount);
+    Mesh torus = GenMeshTorus(1.4f, 0.35f, 32, 12);
+    GenMeshTangents(&torus);
+    torusModel = LoadModelFromMesh(torus);
+    Image billboard = GenImageChecked(32, 32, 8, 8, GOLD, ORANGE);
+    billboardTexture = LoadTextureFromImage(billboard);
+    UnloadImage(billboard);
     SetWindowTitle(IsModelValid(glbModel) ?
         "RayGPU Examples - Basic 3D - GLB loaded" : "RayGPU Examples - Basic 3D");
 }
@@ -72,9 +84,13 @@ void Basic3DShutdown(void)
 {
     UnloadModelAnimations(glbAnimations, glbAnimationCount);
     if (IsModelValid(glbModel)) UnloadModel(glbModel);
+    if (IsModelValid(torusModel)) UnloadModel(torusModel);
+    if (IsTextureValid(billboardTexture)) UnloadTexture(billboardTexture);
     glbAnimations = (ModelAnimation *)0;
     glbAnimationCount = 0;
     glbModel = (Model){0};
+    torusModel = (Model){0};
+    billboardTexture = (Texture2D){0};
     camera = (Camera3D){0};
     orbit = 0;
 }
