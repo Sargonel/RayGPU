@@ -5,6 +5,8 @@
  * It only needs the decoder entry point to understand RayGPU below. */
 unsigned char *stbi_load_from_memory(const unsigned char *buffer,int length,
     int *width,int *height,int *channelsInFile,int desiredChannels);
+unsigned char *stbi_load_gif_from_memory(const unsigned char *buffer,int length,
+    int **delays,int *width,int *height,int *frames,int *channels,int desiredChannels);
 #else
 /* Bundled stb_image v2.30, public domain/MIT. */
 #define STBI_NO_STDIO
@@ -46,6 +48,30 @@ Image LoadImageFromMemory(const char *fileType,const unsigned char *fileData,int
 Image LoadImage(const char *fileName) {
     int size=0; unsigned char *data=LoadFileData(fileName,&size); if (!data) return (Image){0};
     Image image=LoadImageFromMemory(GetFileExtension(fileName),data,size); UnloadFileData(data); return image;
+}
+Image LoadImageAnimFromMemory(const char *fileType,const unsigned char *fileData,int dataSize,int *frames) {
+    if (frames) *frames=0;
+    if (!fileType || !fileData || dataSize<=0) return (Image){0};
+    if (dataSize>=6 && (memcmp(fileData,"GIF87a",6)==0 || memcmp(fileData,"GIF89a",6)==0)) {
+        int width=0,height=0,count=0,channels=0;
+        unsigned char *pixels=stbi_load_gif_from_memory(fileData,dataSize,NULL,&width,&height,&count,&channels,4);
+        if (!pixels || width<=0 || height<=0 || count<=0) { MemFree(pixels); return (Image){0}; }
+        if (frames) *frames=count;
+        return (Image){pixels,width,height,1,7};
+    }
+    Image image=LoadImageFromMemory(fileType,fileData,dataSize);
+    if (frames && IsImageValid(image)) *frames=1;
+    return image;
+}
+Image LoadImageAnim(const char *fileName,int *frames) {
+    if (frames) *frames=0;
+    if (!fileName) return (Image){0};
+    int size=0;
+    unsigned char *data=LoadFileData(fileName,&size);
+    if (!data) return (Image){0};
+    Image image=LoadImageAnimFromMemory(GetFileExtension(fileName),data,size,frames);
+    UnloadFileData(data);
+    return image;
 }
 bool IsImageValid(Image image) { return image.data && image.width>0 && image.height>0 && image.format==7; }
 void UnloadImage(Image image) { MemFree(image.data); }

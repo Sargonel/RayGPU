@@ -1,3 +1,5 @@
+/* RayGPU modification: fix GIF disposal-3 history pointer and check frame-buffer overflow.
+ * Original license notices remain below. */
 /* stb_image - v2.30 - public domain image loader - http://nothings.org/stb
                                   no warranty implied; use at your own risk
 
@@ -6988,6 +6990,8 @@ static void *stbi__load_gif_main(stbi__context *s, int **delays, int *x, int *y,
             *x = g.w;
             *y = g.h;
             ++layers;
+            if (!stbi__mad3sizes_valid(layers, g.w, g.h * 4, 0))
+               return stbi__load_gif_main_outofmem(&g, out, delays);
             stride = g.w * g.h * 4;
 
             if (out) {
@@ -7020,7 +7024,7 @@ static void *stbi__load_gif_main(stbi__context *s, int **delays, int *x, int *y,
             }
             memcpy( out + ((layers - 1) * stride), u, stride );
             if (layers >= 2) {
-               two_back = out - 2 * stride;
+               two_back = out + (layers - 2) * stride;
             }
 
             if (delays) {

@@ -219,7 +219,15 @@ Opening `index.html` through a `file://` URL is not supported.
   positions, normals, tangents, two UV sets, vertex colors, and 8/16/32-bit
   indices; metallic/roughness, normal, occlusion, and emissive material maps;
   and one-armature skeletal animation with step, linear, and cubic channels.
-- PNG, JPEG, BMP, TGA, and first-frame GIF decoding from files or memory.
+- OBJ geometry with polygon triangulation, negative indices, groups, UVs,
+  normals, and MTL libraries/textures. `LoadMaterials()` loads standalone MTL
+  libraries; call `UnloadMaterial()` on each entry and `MemFree()` on the array.
+- IQM v2 geometry and skeletal animations, including separate animation files;
+  MagicaVoxel VOX v150/v200 colored surface meshes; and binary/compressed/ASCII
+  M3D models, materials, embedded textures, bones, and interpolated animations.
+  Large imported meshes are split into batches of at most 65,535 vertices.
+- PNG, JPEG, BMP, TGA, and GIF decoding from files or memory, including
+  animated GIF sequences through `LoadImageAnim()`/`LoadImageAnimFromMemory()`.
 - Image creation, copying, cropping, resizing, flipping, arbitrary rotation,
   alpha/color processing, palettes, blur, convolution, dithering, channel
   extraction, CPU drawing, and procedural gradients/noise/cellular images.
@@ -242,6 +250,9 @@ Opening `index.html` through a `file://` URL is not supported.
 Image decoding and font rasterization use `stb_image` v2.30 and
 `stb_truetype`, bundled under `src/external/`. Both use public-domain/MIT
 licensing and are also bundled by raylib. Users do not install them separately.
+M3D importing uses the bundled Model3D SDK in `src/external/m3d.h`, under its
+original MIT license. All importers use RayGPU's file and memory APIs on native
+and web builds; no additional installation is needed.
 
 ## Custom WGSL contract
 
@@ -298,7 +309,7 @@ and WGSL stay synchronized. See the shader in [`main.c`](main.c) or
 - OGG, MP3, QOA, optional FLAC, XM, and MOD decoding; streamed music;
   procedural audio streams and processors; and wave exporting.
 - Additional raylib image formats such as RAW, QOI, and DDS; image and texture
-  mipmaps; animated GIF frames; image exporting; screenshots; and GPU texture
+  mipmaps; image exporting; screenshots; and GPU texture
   readback.
 - Image-based fonts, font-data extraction, and font-atlas export helpers.
 - Extra shader texture samplers and shader attribute reflection.
@@ -310,7 +321,6 @@ and WGSL stay synchronized. See the shader in [`main.c`](main.c) or
 
 ## Remaining 3D work
 
-- OBJ/MTL, IQM, VOX, and M3D model loading, plus `LoadMaterials()`.
 - glTF sparse accessors, morph targets, scene selection, and compressed mesh
   extensions.
 - Material custom shaders, additional texture samplers, and actual GPU
@@ -321,13 +331,20 @@ and WGSL stay synchronized. See the shader in [`main.c`](main.c) or
 ## Current limits
 
 - Native rendering currently supports Windows through Dawn/D3D12.
+- VOX loading uses voxel volumes and their palettes; scene-node transforms and
+  animation are ignored, as in raylib's VOX loader. IQM/M3D skinning supports up
+  to four influences per vertex and bone IDs that fit in one byte.
 - Images and ordinary textures use RGBA8 internally.
 - Like raylib 5.5, glTF loading accepts triangle primitives, flattens node
   transforms into mesh data, ignores scene selection, uses one armature and
   four joints per vertex, and stores indices as 16-bit values. Morph targets,
   sparse accessors, Draco/meshopt compression, and extended PBR materials are
   not supported.
-- GIF loading currently returns only the first frame.
+- `LoadImage()` returns the first GIF frame. `LoadImageAnim()` returns all
+  frames as consecutive RGBA8 pixels; frame delays are discarded, like raylib.
+  Upload a selected frame with `UpdateTexture(texture, (unsigned char *)image.data
+  + (size_t)frame*image.width*image.height*4)` and free the complete sequence
+  with `UnloadImage(image)`. Choose playback timing in your game code.
 - The built-in font contains a small ASCII subset; use a TTF/OTF font for wider
   Unicode coverage.
 - RayGPU supports 256 simultaneous texture slots, 32 custom shaders, and
@@ -336,4 +353,4 @@ and WGSL stay synchronized. See the shader in [`main.c`](main.c) or
 ## License
 
 RayGPU is distributed under the zlib license. See [`LICENSE`](LICENSE).
-The stb licenses remain included in their headers under `src/external/`.
+The stb and Model3D licenses remain included in their headers under `src/external/`.

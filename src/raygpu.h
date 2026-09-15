@@ -275,6 +275,8 @@ void DrawPlane(Vector3 centerPos,Vector2 size,Color color);
 void DrawRay(Ray ray,Color color);
 void DrawGrid(int slices,float spacing);
 Model LoadModel(const char *fileName);
+/* Load an MTL material library. UnloadMaterial() each entry, then MemFree() the array. */
+Material *LoadMaterials(const char *fileName,int *materialCount);
 ModelAnimation *LoadModelAnimations(const char *fileName,int *animCount);
 void UpdateModelAnimation(Model model,ModelAnimation anim,int frame);
 void UpdateModelAnimationBones(Model model,ModelAnimation anim,int frame);
@@ -467,6 +469,10 @@ const char *GetWorkingDirectory(void);
 const char *GetApplicationDirectory(void);
 Image LoadImage(const char *fileName);
 Image LoadImageFromMemory(const char *fileType,const unsigned char *fileData,int dataSize);
+/* Animated images contain consecutive RGBA8 frames; delays are discarded like raylib.
+ * UpdateTexture() with data + frame*width*height*4; UnloadImage() frees all frames. */
+Image LoadImageAnim(const char *fileName,int *frames);
+Image LoadImageAnimFromMemory(const char *fileType,const unsigned char *fileData,int dataSize,int *frames);
 bool IsImageValid(Image image);
 void UnloadImage(Image image);
 Image GenImageColor(int width,int height,Color color);
