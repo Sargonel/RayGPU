@@ -51,12 +51,17 @@ typedef struct Music {
 typedef struct Camera3D { Vector3 position,target,up; float fovy; int projection; } Camera3D;
 typedef Camera3D Camera;
 typedef struct Camera2D { Vector2 offset,target; float rotation,zoom; } Camera2D;
+typedef struct MeshMorphTarget { float *vertices,*normals,*tangents; } MeshMorphTarget;
+typedef struct ModelMorphData ModelMorphData;
 typedef struct Mesh {
     int vertexCount,triangleCount;
     float *vertices,*texcoords,*texcoords2,*normals,*tangents;
     unsigned char *colors; unsigned short *indices;
     float *animVertices,*animNormals; unsigned char *boneIds; float *boneWeights;
     Matrix *boneMatrices; int boneCount; unsigned int vaoId,*vboId;
+    int morphTargetCount; MeshMorphTarget *morphTargets; float *morphWeights;
+    float *morphBaseVertices,*morphBaseNormals,*morphBaseTangents;
+    int sourceNode;
 } Mesh;
 typedef struct MaterialMap { Texture2D texture; Color color; float value; } MaterialMap;
 typedef struct Material { Shader shader; MaterialMap *maps; float params[4]; } Material;
@@ -65,9 +70,11 @@ typedef struct BoneInfo { char name[32]; int parent; } BoneInfo;
 typedef struct Model {
     Matrix transform; int meshCount,materialCount; Mesh *meshes; Material *materials;
     int *meshMaterial; int boneCount; BoneInfo *bones; Transform *bindPose;
+    ModelMorphData *morphData;
 } Model;
 typedef struct ModelAnimation {
     int boneCount,frameCount; BoneInfo *bones; Transform **framePoses; char name[32];
+    int sourceAnimation;
 } ModelAnimation;
 typedef struct Ray { Vector3 position,direction; } Ray;
 typedef struct RayCollision { bool hit; float distance; Vector3 point,normal; } RayCollision;
@@ -275,9 +282,16 @@ void DrawPlane(Vector3 centerPos,Vector2 size,Color color);
 void DrawRay(Ray ray,Color color);
 void DrawGrid(int slices,float spacing);
 Model LoadModel(const char *fileName);
+/* glTF scene index; -1 uses the default scene (or the first scene). */
+Model LoadModelFromScene(const char *fileName,int sceneIndex);
+/* Weights may be negative or exceed 1; count must equal morphTargetCount. */
+void SetMeshMorphWeights(Mesh mesh,const float *weights,int count);
+/* Evaluate glTF weight animation by its original index, in seconds (clamped). */
+void UpdateModelMorphAnimation(Model model,int animationIndex,float time);
 /* Load an MTL material library. UnloadMaterial() each entry, then MemFree() the array. */
 Material *LoadMaterials(const char *fileName,int *materialCount);
 ModelAnimation *LoadModelAnimations(const char *fileName,int *animCount);
+ModelAnimation *LoadModelAnimationsFromScene(const char *fileName,int sceneIndex,int *animCount);
 void UpdateModelAnimation(Model model,ModelAnimation anim,int frame);
 void UpdateModelAnimationBones(Model model,ModelAnimation anim,int frame);
 void UnloadModelAnimation(ModelAnimation anim);

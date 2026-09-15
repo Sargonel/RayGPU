@@ -219,6 +219,19 @@ Opening `index.html` through a `file://` URL is not supported.
   positions, normals, tangents, two UV sets, vertex colors, and 8/16/32-bit
   indices; metallic/roughness, normal, occlusion, and emissive material maps;
   and one-armature skeletal animation with step, linear, and cubic channels.
+- glTF sparse accessors (including zero-initialized bases), quantized attributes,
+  default/explicit scene selection, retained position/normal/tangent morph
+  targets, and step/linear/cubic morph-weight animations. `LoadModel()` loads
+  the default scene; `LoadModelFromScene(path, index)` selects another scene.
+  `SetMeshMorphWeights(mesh, weights, mesh.morphTargetCount)` changes weights;
+  `UpdateModelMorphAnimation(model, animationIndex, timeInSeconds)` evaluates
+  weight animation, including models without a skeleton. Skeletal
+  `LoadModelAnimations()` / `UpdateModelAnimation()` also work for morph-only
+  clips and evaluate matching weights alongside skeletal animation.
+  `LoadModelAnimationsFromScene(path, index, &count)` matches an explicitly
+  selected scene.
+- `EXT_meshopt_compression` decoding for attributes, triangle indices, and
+  index sequences, with octahedral, quaternion, and exponential filters.
 - OBJ geometry with polygon triangulation, negative indices, groups, UVs,
   normals, and MTL libraries/textures. `LoadMaterials()` loads standalone MTL
   libraries; call `UnloadMaterial()` on each entry and `MemFree()` on the array.
@@ -253,6 +266,8 @@ licensing and are also bundled by raylib. Users do not install them separately.
 M3D importing uses the bundled Model3D SDK in `src/external/m3d.h`, under its
 original MIT license. All importers use RayGPU's file and memory APIs on native
 and web builds; no additional installation is needed.
+Meshopt decoding uses a scalar C17 port of meshoptimizer v0.22's decoders,
+bundled in `src/external/meshopt_decode.h` with the original MIT license.
 
 ## Custom WGSL contract
 
@@ -321,8 +336,7 @@ and WGSL stay synchronized. See the shader in [`main.c`](main.c) or
 
 ## Remaining 3D work
 
-- glTF sparse accessors, morph targets, scene selection, and compressed mesh
-  extensions.
+- Draco (`KHR_draco_mesh_compression`) and newer compressed mesh extensions.
 - Material custom shaders, additional texture samplers, and actual GPU
   skinning.
 - Optional advanced rendering features such as configurable lights, fog, PBR
@@ -335,11 +349,13 @@ and WGSL stay synchronized. See the shader in [`main.c`](main.c) or
   animation are ignored, as in raylib's VOX loader. IQM/M3D skinning supports up
   to four influences per vertex and bone IDs that fit in one byte.
 - Images and ordinary textures use RGBA8 internally.
-- Like raylib 5.5, glTF loading accepts triangle primitives, flattens node
-  transforms into mesh data, ignores scene selection, uses one armature and
-  four joints per vertex, and stores indices as 16-bit values. Morph targets,
-  sparse accessors, Draco/meshopt compression, and extended PBR materials are
-  not supported.
+- glTF loading accepts triangle primitives, flattens node transforms into mesh
+  data, uses one armature per selected scene and four joints per vertex, and
+  stores indices as 16-bit values. Required Draco compression and extended PBR
+  materials are not supported. Meshopt supports the EXT codec versions used by
+  meshoptimizer v0.22, rather than newer `KHR_meshopt_compression` codecs.
+  Morph targets are evaluated on the CPU, with up to 256 targets per primitive.
+  Appended morph fields extend the raylib-inspired mesh/model type layouts.
 - `LoadImage()` returns the first GIF frame. `LoadImageAnim()` returns all
   frames as consecutive RGBA8 pixels; frame delays are discarded, like raylib.
   Upload a selected frame with `UpdateTexture(texture, (unsigned char *)image.data
@@ -353,4 +369,5 @@ and WGSL stay synchronized. See the shader in [`main.c`](main.c) or
 ## License
 
 RayGPU is distributed under the zlib license. See [`LICENSE`](LICENSE).
-The stb and Model3D licenses remain included in their headers under `src/external/`.
+The stb, Model3D, and meshoptimizer licenses remain included in their headers
+under `src/external/`.
