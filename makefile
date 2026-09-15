@@ -1,7 +1,7 @@
 CC = clang
 DAWN_SDK ?= .deps/dawn-sdk
 
-CFLAGS = -std=c17 -O2 -Wall -Wextra
+CFLAGS = -std=c17 -O2 -Wall -Wextra -Isrc/
 NATIVE_FLAGS = -I"$(DAWN_SDK)/include"
 NATIVE_LIBS = -L"$(DAWN_SDK)/lib" -lwebgpu_dawn -lDXGuid -lKernel32 -lOneCore -luser32 -lgdi32 -lwinmm
 WEB_FLAGS = --target=wasm32 -ffreestanding -nostdlib -Wl,--no-entry -Wl,--export=main -Wl,--export-memory -Wl,-z,stack-size=1048576 -Wl,--initial-memory=67108864 -Wl,--max-memory=2147483648
@@ -9,14 +9,14 @@ WEB_FLAGS = --target=wasm32 -ffreestanding -nostdlib -Wl,--no-entry -Wl,--export
 .PHONY: native web run server clean
 
 native:
-	$(CC) $(CFLAGS) $(NATIVE_FLAGS) main.c $(NATIVE_LIBS) -o main.exe
+	$(CC) $(CFLAGS) $(NATIVE_FLAGS) main.c src/raygpu.c $(NATIVE_LIBS) -o main.exe
 	powershell -NoProfile -Command "Copy-Item -LiteralPath (Join-Path $$env:SystemRoot 'System32/d3dcompiler_47.dll') -Destination 'd3dcompiler_47.dll' -Force"
 
 web:
 	cmd /C "if not exist build\web\assets mkdir build\web\assets"
-	$(CC) $(CFLAGS) $(WEB_FLAGS) main.c -o build/web/main.wasm
+	$(CC) $(CFLAGS) $(WEB_FLAGS) main.c src/raygpu.c -o build/web/main.wasm
 	powershell -NoProfile -Command "Copy-Item -LiteralPath 'shell.html' -Destination 'build/web/index.html' -Force"
-	powershell -NoProfile -Command "Copy-Item -LiteralPath 'raygpu.js' -Destination 'build/web/raygpu.js' -Force"
+	powershell -NoProfile -Command "Copy-Item -LiteralPath 'src/raygpu.js' -Destination 'build/web/raygpu.js' -Force"
 	powershell -NoProfile -Command "if (Test-Path 'assets') { Copy-Item -Path 'assets/*' -Destination 'build/web/assets' -Recurse -Force }"
 
 run: native

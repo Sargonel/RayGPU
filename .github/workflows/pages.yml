@@ -30,16 +30,16 @@ jobs:
       - name: Build example catalog
         run: |
           mkdir -p dist
-          clang -std=c17 -O2 -Wall -Wextra \
+          clang -std=c17 -O2 -Wall -Wextra -Isrc \
             --target=wasm32 -ffreestanding -nostdlib \
             -Wl,--no-entry -Wl,--export=main -Wl,--export-memory \
             -Wl,-z,stack-size=1048576 \
             -Wl,--initial-memory=67108864 \
             -Wl,--max-memory=2147483648 \
-            examples/main.c examples/snake.c examples/basic_3d.c \
+            examples/main.c examples/snake.c examples/basic_3d.c src/raygpu.c \
             -o dist/main.wasm
           cp shell.html dist/index.html
-          cp raygpu.js dist/raygpu.js
+          cp src/raygpu.js dist/raygpu.js
           mkdir -p dist/examples/assets
           cp examples/assets/example.glb dist/examples/assets/example.glb
           sed -i "s|raygpu.js|raygpu.js?rev=${GITHUB_SHA}|" dist/index.html

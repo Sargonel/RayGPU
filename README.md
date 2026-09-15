@@ -1,6 +1,6 @@
 # RayGPU
 
-RayGPU is an independent, single-header 2D/3D C library inspired by raylib and
+RayGPU is an independent, modular 2D/3D C library inspired by raylib and
 built around WebGPU. The same C source can compile as a native Windows program
 or as freestanding WebAssembly for a browser.
 
@@ -16,10 +16,9 @@ is still being built. VR and stereo rendering are outside its scope.
 
 ## Quick start
 
-Define `RAYGPU_IMPLEMENTATION` in exactly one C source file:
+Include the public header in your game code. The makefiles compile `src/raygpu.c` separately; no implementation macro is needed:
 
 ```c
-#define RAYGPU_IMPLEMENTATION
 #include "raygpu.h"
 
 static void GameFrame(void)
@@ -44,6 +43,18 @@ int main(void)
 
 `RunMainLoop()` is required because native Windows uses a normal blocking loop,
 while the browser uses `requestAnimationFrame()`.
+
+## Source layout
+
+`src/raygpu.h` is the public API. Add `src/` to the compiler include path and
+compile `src/raygpu.c` once alongside your application. It assembles the core,
+shapes, textures, text, audio, models, and renderer modules in one translation
+unit so they can share private state. Do not compile the module `.c` files
+individually or define `RAYGPU_IMPLEMENTATION` in application code.
+
+Third-party image/font code and its license notices live in `src/external/`.
+The browser bridge is `src/raygpu.js`; web builds copy it beside `main.wasm`
+and `index.html`. Keep the complete `src/` directory when using RayGPU.
 
 ## Requirements
 
@@ -229,7 +240,7 @@ Opening `index.html` through a `file://` URL is not supported.
   available limit.
 
 Image decoding and font rasterization use `stb_image` v2.30 and
-`stb_truetype`, amalgamated into `raygpu.h`. Both use public-domain/MIT
+`stb_truetype`, bundled under `src/external/`. Both use public-domain/MIT
 licensing and are also bundled by raylib. Users do not install them separately.
 
 ## Custom WGSL contract
@@ -325,4 +336,4 @@ and WGSL stay synchronized. See the shader in [`main.c`](main.c) or
 ## License
 
 RayGPU is distributed under the zlib license. See [`LICENSE`](LICENSE).
-The licenses for the embedded stb components remain included in `raygpu.h`.
+The stb licenses remain included in their headers under `src/external/`.

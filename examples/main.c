@@ -1,4 +1,3 @@
-#define RAYGPU_IMPLEMENTATION
 #include "examples.h"
 
 #define SCREEN_WIDTH 1920

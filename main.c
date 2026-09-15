@@ -1,4 +1,3 @@
-#define RAYGPU_IMPLEMENTATION
 #include "raygpu.h"
 
 static void GameFrame(void)

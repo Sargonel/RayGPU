@@ -1,7 +1,7 @@
 #ifndef RAYGPU_EXAMPLES_H
 #define RAYGPU_EXAMPLES_H
 
-#include "../raygpu.h"
+#include "raygpu.h"
 
 void DrawExampleBackButton(void);
 
