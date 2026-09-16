@@ -3,7 +3,7 @@ DAWN_SDK ?= ../.deps/dawn-sdk
 
 CFLAGS = -std=c17 -O2 -Wall -Wextra -I../src/
 NATIVE_FLAGS = -I"$(DAWN_SDK)/include"
-NATIVE_LIBS = -L"$(DAWN_SDK)/lib" -lwebgpu_dawn -lDXGuid -lKernel32 -lOneCore -luser32 -lgdi32 -lwinmm
+NATIVE_LIBS = -L"$(DAWN_SDK)/lib" -lwebgpu_dawn -lDXGuid -lKernel32 -lOneCore -luser32 -lgdi32 -lwinmm -lshell32
 WEB_FLAGS = --target=wasm32 -ffreestanding -nostdlib -Wl,--no-entry -Wl,--export=main -Wl,--export-memory -Wl,-z,stack-size=1048576 -Wl,--initial-memory=67108864 -Wl,--max-memory=2147483648
 
 .PHONY: native web run server clean

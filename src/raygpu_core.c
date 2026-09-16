@@ -108,6 +108,50 @@ static int mr_translate_key(WPARAM key,LPARAM detail) {
     default: return KEY_NULL;
     }
 }
+typedef struct MRMonitorList { HMONITOR handles[16]; int count; } MRMonitorList;
+static BOOL CALLBACK mr_collect_monitor(HMONITOR monitor,HDC dc,LPRECT rectangle,LPARAM userData) {
+    (void)dc; (void)rectangle;
+    MRMonitorList *list=(MRMonitorList *)userData;
+    if (list->count<16) list->handles[list->count++]=monitor;
+    return TRUE;
+}
+static MRMonitorList mr_get_monitors(void) {
+    MRMonitorList list={0}; EnumDisplayMonitors(NULL,NULL,mr_collect_monitor,(LPARAM)&list); return list;
+}
+static HMONITOR mr_get_monitor(int index) {
+    MRMonitorList list=mr_get_monitors(); return index>=0&&index<list.count ? list.handles[index] : NULL;
+}
+static int mr_monitor_index(HMONITOR monitor) {
+    MRMonitorList list=mr_get_monitors(); for(int i=0;i<list.count;i++)if(list.handles[i]==monitor)return i; return 0;
+}
+static void mr_release_path_list(FilePathList files) {
+    if(files.paths){for(unsigned int i=0;i<files.count;i++)MemFree(files.paths[i]);MemFree(files.paths);}
+}
+static void mr_set_fullscreen_mode(bool fullscreen,bool borderless) {
+    if(!mr.window)return;
+    if(!fullscreen&&!borderless){
+        if(!mr.fullscreen&&!mr.borderless)return;
+        SetWindowLongPtrA(mr.window,GWL_STYLE,mr.windowedStyle);
+        SetWindowLongPtrA(mr.window,GWL_EXSTYLE,mr.windowedExStyle);
+        SetWindowPlacement(mr.window,&mr.windowedPlacement);
+        SetWindowPos(mr.window,NULL,0,0,0,0,SWP_NOMOVE|SWP_NOSIZE|SWP_NOZORDER|SWP_NOACTIVATE|SWP_FRAMECHANGED);
+        mr.fullscreen=mr.borderless=false; return;
+    }
+    if(!mr.fullscreen&&!mr.borderless){
+        mr.windowedStyle=GetWindowLongPtrA(mr.window,GWL_STYLE);
+        mr.windowedExStyle=GetWindowLongPtrA(mr.window,GWL_EXSTYLE);
+        mr.windowedPlacement=(WINDOWPLACEMENT){0};mr.windowedPlacement.length=sizeof mr.windowedPlacement;
+        GetWindowPlacement(mr.window,&mr.windowedPlacement);
+    }
+    HMONITOR monitor=MonitorFromWindow(mr.window,MONITOR_DEFAULTTONEAREST);
+    MONITORINFO info={0};info.cbSize=sizeof info;if(!GetMonitorInfoA(monitor,&info))return;
+    SetWindowLongPtrA(mr.window,GWL_STYLE,WS_POPUP|WS_VISIBLE);
+    SetWindowLongPtrA(mr.window,GWL_EXSTYLE,mr.windowedExStyle&~(WS_EX_CLIENTEDGE|WS_EX_WINDOWEDGE));
+    SetWindowPos(mr.window,HWND_TOP,info.rcMonitor.left,info.rcMonitor.top,
+        info.rcMonitor.right-info.rcMonitor.left,info.rcMonitor.bottom-info.rcMonitor.top,
+        SWP_NOACTIVATE|SWP_FRAMECHANGED);
+    mr.fullscreen=fullscreen;mr.borderless=borderless;
+}
 static LRESULT CALLBACK mr_window_proc(HWND window,UINT message,WPARAM w,LPARAM l) {
     switch(message) {
     case WM_CLOSE: mr.close=true; return 0;
@@ -138,6 +182,12 @@ static LRESULT CALLBACK mr_window_proc(HWND window,UINT message,WPARAM w,LPARAM 
     case WM_RBUTTONUP: mr_button(1,false); if (!mr.buttons[0] && !mr.buttons[2]) ReleaseCapture(); return 0;
     case WM_MBUTTONUP: mr_button(2,false); if (!mr.buttons[0] && !mr.buttons[1]) ReleaseCapture(); return 0;
     case WM_CAPTURECHANGED: memset(mr.buttons,0,sizeof mr.buttons); return 0;
+    case WM_DROPFILES: {
+        HDROP drop=(HDROP)w;UINT count=DragQueryFileW(drop,0xffffffffu,NULL,0);
+        mr_release_path_list(mr.droppedFiles);mr.droppedFiles=(FilePathList){0};
+        if(count){mr.droppedFiles.paths=MemAlloc(count*sizeof *mr.droppedFiles.paths);if(mr.droppedFiles.paths){memset(mr.droppedFiles.paths,0,count*sizeof *mr.droppedFiles.paths);mr.droppedFiles.capacity=count;for(UINT i=0;i<count;i++){UINT length=DragQueryFileW(drop,i,NULL,0);WCHAR *wide=MemAlloc((length+1)*sizeof *wide);if(!wide||!DragQueryFileW(drop,i,wide,length+1)){MemFree(wide);continue;}int bytes=WideCharToMultiByte(CP_UTF8,0,wide,-1,NULL,0,NULL,NULL);char *path=bytes>0?MemAlloc((unsigned int)bytes):NULL;if(path){WideCharToMultiByte(CP_UTF8,0,wide,-1,path,bytes,NULL,NULL);mr.droppedFiles.paths[mr.droppedFiles.count++]=path;}MemFree(wide);}}}
+        DragFinish(drop);return 0;
+    }
     }
     return DefWindowProcA(window,message,w,l);
 }
@@ -522,6 +572,7 @@ void InitWindow(int width,int height,const char *title) {
     mr.window=CreateWindowExA(0,wc.lpszClassName,title,WS_OVERLAPPEDWINDOW,windowX,windowY,
         windowWidth,windowHeight,NULL,NULL,module,NULL);
     if (!mr.window) { mr_error("Cannot create window"); return; }
+    DragAcceptFiles(mr.window,TRUE);
     ShowWindow(mr.window,SW_SHOW);
     mr.instance=wgpuCreateInstance(NULL);
     if (!mr.instance) { mr_error("Cannot create WebGPU instance"); CloseWindow(); return; }
@@ -592,6 +643,27 @@ bool IsWindowMaximized(void) {
     return false;
 #endif
 }
+bool IsWindowFullscreen(void) {
+#ifdef _WIN32
+    return mr.fullscreen;
+#else
+    return mr_web_window_query(0,0)!=0;
+#endif
+}
+void ToggleFullscreen(void) {
+#ifdef _WIN32
+    mr_set_fullscreen_mode(!mr.fullscreen,false);
+#else
+    mr_web_window_command(2,0,0,NULL);
+#endif
+}
+void ToggleBorderlessWindowed(void) {
+#ifdef _WIN32
+    mr_set_fullscreen_mode(false,!mr.borderless);
+#else
+    mr_web_window_command(3,0,0,NULL);
+#endif
+}
 Vector2 GetWindowPosition(void) {
 #ifdef _WIN32
     RECT rect={0}; if (mr.window && GetWindowRect(mr.window,&rect)) return (Vector2){(float)rect.left,(float)rect.top};
@@ -601,8 +673,98 @@ Vector2 GetWindowPosition(void) {
 Vector2 GetWindowScaleDPI(void) {
 #ifdef _WIN32
     if (mr.window) { float scale=GetDpiForWindow(mr.window)/96.0f; if (scale>0) return (Vector2){scale,scale}; }
+#else
+    float scale=mr_web_window_query(10,0)/1000.0f; if(scale>0)return(Vector2){scale,scale};
 #endif
     return (Vector2){1,1};
+}
+int GetMonitorCount(void) {
+#ifdef _WIN32
+    return mr_get_monitors().count;
+#else
+    return mr_web_window_query(1,0);
+#endif
+}
+int GetCurrentMonitor(void) {
+#ifdef _WIN32
+    return mr.window ? mr_monitor_index(MonitorFromWindow(mr.window,MONITOR_DEFAULTTONEAREST)) : 0;
+#else
+    return mr_web_window_query(2,0);
+#endif
+}
+Vector2 GetMonitorPosition(int monitor) {
+#ifdef _WIN32
+    HMONITOR handle=mr_get_monitor(monitor);MONITORINFO info={0};info.cbSize=sizeof info;
+    if(handle&&GetMonitorInfoA(handle,&info))return(Vector2){(float)info.rcMonitor.left,(float)info.rcMonitor.top};
+    return(Vector2){0};
+#else
+    return(Vector2){(float)mr_web_window_query(3,monitor),(float)mr_web_window_query(4,monitor)};
+#endif
+}
+int GetMonitorWidth(int monitor) {
+#ifdef _WIN32
+    HMONITOR handle=mr_get_monitor(monitor);MONITORINFO info={0};info.cbSize=sizeof info;return handle&&GetMonitorInfoA(handle,&info)?info.rcMonitor.right-info.rcMonitor.left:0;
+#else
+    return mr_web_window_query(5,monitor);
+#endif
+}
+int GetMonitorHeight(int monitor) {
+#ifdef _WIN32
+    HMONITOR handle=mr_get_monitor(monitor);MONITORINFO info={0};info.cbSize=sizeof info;return handle&&GetMonitorInfoA(handle,&info)?info.rcMonitor.bottom-info.rcMonitor.top:0;
+#else
+    return mr_web_window_query(6,monitor);
+#endif
+}
+#ifdef _WIN32
+static int mr_monitor_device_cap(int monitor,int capability) {
+    HMONITOR handle=mr_get_monitor(monitor);MONITORINFOEXA info={0};info.cbSize=sizeof info;
+    if(!handle||!GetMonitorInfoA(handle,(MONITORINFO *)&info))return 0;
+    typedef HDC (WINAPI *MRCreateDC)(LPCSTR,LPCSTR,LPCSTR,const void *);
+    typedef int (WINAPI *MRGetCaps)(HDC,int);typedef BOOL (WINAPI *MRDeleteDC)(HDC);
+    HMODULE library=GetModuleHandleA("gdi32.dll");if(!library)return 0;
+    MRCreateDC createDC=(MRCreateDC)(void *)GetProcAddress(library,"CreateDCA");
+    MRGetCaps getCaps=(MRGetCaps)(void *)GetProcAddress(library,"GetDeviceCaps");
+    MRDeleteDC deleteDC=(MRDeleteDC)(void *)GetProcAddress(library,"DeleteDC");
+    if(!createDC||!getCaps||!deleteDC)return 0;HDC dc=createDC("DISPLAY",info.szDevice,NULL,NULL);if(!dc)return 0;
+    int value=getCaps(dc,capability);deleteDC(dc);return value;
+}
+#endif
+int GetMonitorPhysicalWidth(int monitor) {
+#ifdef _WIN32
+    return mr_monitor_device_cap(monitor,4);
+#else
+    return mr_web_window_query(7,monitor);
+#endif
+}
+int GetMonitorPhysicalHeight(int monitor) {
+#ifdef _WIN32
+    return mr_monitor_device_cap(monitor,6);
+#else
+    return mr_web_window_query(8,monitor);
+#endif
+}
+int GetMonitorRefreshRate(int monitor) {
+#ifdef _WIN32
+    return mr_monitor_device_cap(monitor,116);
+#else
+    return mr_web_window_query(9,monitor);
+#endif
+}
+const char *GetMonitorName(int monitor) {
+    static char name[128];name[0]=0;
+#ifdef _WIN32
+    HMONITOR handle=mr_get_monitor(monitor);MONITORINFOEXA info={0};info.cbSize=sizeof info;
+    if(handle&&GetMonitorInfoA(handle,(MONITORINFO *)&info)){
+        typedef struct MRDisplayDevice { DWORD cb;CHAR deviceName[32],deviceString[128];DWORD stateFlags;CHAR deviceId[128],deviceKey[128]; } MRDisplayDevice;
+        typedef BOOL (WINAPI *MREnumDisplayDevices)(LPCSTR,DWORD,MRDisplayDevice *,DWORD);
+        MREnumDisplayDevices enumerate=(MREnumDisplayDevices)(void *)GetProcAddress(GetModuleHandleA("user32.dll"),"EnumDisplayDevicesA");
+        MRDisplayDevice display={0};display.cb=sizeof display;
+        if(enumerate&&enumerate(info.szDevice,0,&display,0))snprintf(name,sizeof name,"%s",display.deviceString);else snprintf(name,sizeof name,"%s",info.szDevice);
+    }
+#else
+    mr_web_window_text(0,monitor,name,(int)sizeof name);
+#endif
+    return name;
 }
 void SetWindowTitle(const char *title) {
     if (!title) return;
@@ -612,11 +774,41 @@ void SetWindowTitle(const char *title) {
     mr_web_window_command(0,0,0,title);
 #endif
 }
+#ifdef _WIN32
+static HICON mr_create_window_icon(Image image) {
+    if(!IsImageValid(image)||image.width<=0||image.height<=0)return NULL;
+    Color *colors=LoadImageColors(image);if(!colors)return NULL;
+    size_t colorSize=(size_t)image.width*image.height*4,maskStride=(size_t)((image.width+31)/32)*4,maskSize=maskStride*image.height;
+    unsigned char *colorBits=MemAlloc((unsigned int)colorSize),*maskBits=MemAlloc((unsigned int)maskSize);HICON icon=NULL;
+    if(colorBits&&maskBits){memset(maskBits,0,maskSize);for(int y=0;y<image.height;y++)for(int x=0;x<image.width;x++){Color c=colors[y*image.width+x];size_t at=((size_t)(image.height-1-y)*image.width+x)*4;colorBits[at]=c.b;colorBits[at+1]=c.g;colorBits[at+2]=c.r;colorBits[at+3]=c.a;}icon=CreateIcon(GetModuleHandleA(NULL),image.width,image.height,1,32,maskBits,colorBits);}
+    MemFree(maskBits);MemFree(colorBits);UnloadImageColors(colors);return icon;
+}
+#endif
+void SetWindowIcons(Image *images,int count) {
+    if(!images||count<=0)return;int smallest=0,largest=0;for(int i=1;i<count;i++){int area=images[i].width*images[i].height;if(area<images[smallest].width*images[smallest].height)smallest=i;if(area>images[largest].width*images[largest].height)largest=i;}
+#ifdef _WIN32
+    HICON big=mr_create_window_icon(images[largest]),small=mr_create_window_icon(images[smallest]);
+    if(big){SendMessageA(mr.window,WM_SETICON,ICON_BIG,(LPARAM)big);if(mr.bigIcon)DestroyIcon(mr.bigIcon);mr.bigIcon=big;}
+    if(small){SendMessageA(mr.window,WM_SETICON,ICON_SMALL,(LPARAM)small);if(mr.smallIcon)DestroyIcon(mr.smallIcon);mr.smallIcon=small;}
+#else
+    Color *colors=LoadImageColors(images[largest]);if(colors){mr_web_window_icon(colors,images[largest].width,images[largest].height);UnloadImageColors(colors);}
+#endif
+}
+void SetWindowIcon(Image image) { SetWindowIcons(&image,1); }
 void SetWindowPosition(int x,int y) {
 #ifdef _WIN32
     if (mr.window) SetWindowPos(mr.window,NULL,x,y,0,0,SWP_NOSIZE|SWP_NOZORDER|SWP_NOACTIVATE);
 #else
     (void)x; (void)y;
+#endif
+}
+void SetWindowMonitor(int monitor) {
+#ifdef _WIN32
+    HMONITOR handle=mr_get_monitor(monitor);MONITORINFO info={0};info.cbSize=sizeof info;if(!handle||!GetMonitorInfoA(handle,&info)||!mr.window)return;
+    if(mr.fullscreen||mr.borderless)SetWindowPos(mr.window,HWND_TOP,info.rcMonitor.left,info.rcMonitor.top,info.rcMonitor.right-info.rcMonitor.left,info.rcMonitor.bottom-info.rcMonitor.top,SWP_NOACTIVATE);
+    else SetWindowPos(mr.window,NULL,info.rcWork.left,info.rcWork.top,0,0,SWP_NOSIZE|SWP_NOZORDER|SWP_NOACTIVATE);
+#else
+    mr_web_window_command(4,monitor,0,NULL);
 #endif
 }
 void SetWindowSize(int width,int height) {
@@ -629,6 +821,21 @@ void SetWindowSize(int width,int height) {
 }
 void SetWindowMinSize(int width,int height) { mr.minWidth=width>0?width:0; mr.minHeight=height>0?height:0; }
 void SetWindowMaxSize(int width,int height) { mr.maxWidth=width>0?width:0; mr.maxHeight=height>0?height:0; }
+void SetWindowOpacity(float opacity) {
+    opacity=mr_clamp01(opacity);
+#ifdef _WIN32
+    if(!mr.window)return;LONG_PTR style=GetWindowLongPtrA(mr.window,GWL_EXSTYLE);SetWindowLongPtrA(mr.window,GWL_EXSTYLE,style|WS_EX_LAYERED);SetLayeredWindowAttributes(mr.window,0,(BYTE)(opacity*255.0f+0.5f),LWA_ALPHA);
+#else
+    mr_web_window_command(5,(int)(opacity*255.0f+0.5f),0,NULL);
+#endif
+}
+void SetWindowFocused(void) {
+#ifdef _WIN32
+    if(mr.window){ShowWindow(mr.window,SW_RESTORE);SetForegroundWindow(mr.window);SetFocus(mr.window);}
+#else
+    mr_web_window_command(6,0,0,NULL);
+#endif
+}
 void MinimizeWindow(void) {
 #ifdef _WIN32
     if (mr.window) ShowWindow(mr.window,SW_MINIMIZE);
@@ -644,6 +851,44 @@ void RestoreWindow(void) {
     if (mr.window) ShowWindow(mr.window,SW_RESTORE);
 #endif
 }
+static void mr_cache_clipboard(const char *text) {
+    if(!text)text="";size_t length=TextLength(text);char *copy=MemRealloc(mr.clipboardText,(unsigned int)length+1);if(copy){memcpy(copy,text,length+1);mr.clipboardText=copy;}
+}
+void SetClipboardText(const char *text) {
+    if(!text)return;mr_cache_clipboard(text);
+#ifdef _WIN32
+    int count=MultiByteToWideChar(CP_UTF8,0,text,-1,NULL,0);if(count<=0||!OpenClipboard(mr.window))return;
+    EmptyClipboard();HGLOBAL memory=GlobalAlloc(GMEM_MOVEABLE,(SIZE_T)count*sizeof(WCHAR));
+    if(memory){WCHAR *wide=GlobalLock(memory);if(wide){MultiByteToWideChar(CP_UTF8,0,text,-1,wide,count);GlobalUnlock(memory);if(!SetClipboardData(CF_UNICODETEXT,memory))GlobalFree(memory);}else GlobalFree(memory);}
+    CloseClipboard();
+#else
+    mr_web_clipboard_set(text);
+#endif
+}
+const char *GetClipboardText(void) {
+#ifdef _WIN32
+    if(OpenClipboard(mr.window)){HANDLE memory=GetClipboardData(CF_UNICODETEXT);if(memory){const WCHAR *wide=GlobalLock(memory);if(wide){int count=WideCharToMultiByte(CP_UTF8,0,wide,-1,NULL,0,NULL,NULL);if(count>0){char *text=MemAlloc((unsigned int)count);if(text){WideCharToMultiByte(CP_UTF8,0,wide,-1,text,count,NULL,NULL);mr_cache_clipboard(text);MemFree(text);}}GlobalUnlock(memory);}}CloseClipboard();}
+#else
+    int size=mr_web_clipboard_size();if(size>0){char *text=MemAlloc((unsigned int)size);if(text){if(mr_web_clipboard_get(text,size))mr_cache_clipboard(text);MemFree(text);}}
+#endif
+    return mr.clipboardText?mr.clipboardText:"";
+}
+bool IsFileDropped(void) {
+#ifdef _WIN32
+    return mr.droppedFiles.count>0;
+#else
+    return mr_web_drop_count()>0;
+#endif
+}
+FilePathList LoadDroppedFiles(void) {
+#ifdef _WIN32
+    FilePathList files=mr.droppedFiles;mr.droppedFiles=(FilePathList){0};return files;
+#else
+    int count=mr_web_drop_count();if(count<=0)return(FilePathList){0};FilePathList files={0};files.paths=MemAlloc((unsigned int)count*sizeof *files.paths);if(!files.paths)return files;memset(files.paths,0,(size_t)count*sizeof *files.paths);files.capacity=(unsigned int)count;
+    for(int i=0;i<count;i++){int size=mr_web_drop_name_size(i);if(size<=0)continue;char *name=MemAlloc((unsigned int)size);if(name&&mr_web_drop_name(i,name,size))files.paths[files.count++]=name;else MemFree(name);}mr_web_drop_clear();return files;
+#endif
+}
+void UnloadDroppedFiles(FilePathList files) { if(files.paths){for(unsigned int i=0;i<files.count;i++)MemFree(files.paths[i]);MemFree(files.paths);} }
 void SetExitKey(int key) { mr.exitKey=(key>=KEY_NULL && key<512)?key:KEY_NULL; }
 void SetTargetFPS(int fps) {
     mr.fps=fps>0 ? fps : 0;

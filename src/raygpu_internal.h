@@ -10,6 +10,16 @@ MR_IMPORT("log") void mr_log(const char *text);
 MR_IMPORT("now") double mr_web_now(void);
 MR_IMPORT("init") void mr_web_init(int width,int height,const char *title);
 MR_IMPORT("window_command") void mr_web_window_command(int command,int a,int b,const char *text);
+MR_IMPORT("window_query") int mr_web_window_query(int command,int index);
+MR_IMPORT("window_text") int mr_web_window_text(int command,int index,char *text,int size);
+MR_IMPORT("window_icon") void mr_web_window_icon(const void *pixels,int width,int height);
+MR_IMPORT("clipboard_set") void mr_web_clipboard_set(const char *text);
+MR_IMPORT("clipboard_size") int mr_web_clipboard_size(void);
+MR_IMPORT("clipboard_get") int mr_web_clipboard_get(char *text,int size);
+MR_IMPORT("drop_count") int mr_web_drop_count(void);
+MR_IMPORT("drop_name_size") int mr_web_drop_name_size(int index);
+MR_IMPORT("drop_name") int mr_web_drop_name(int index,char *text,int size);
+MR_IMPORT("drop_clear") void mr_web_drop_clear(void);
 MR_IMPORT("present") void mr_web_present(const void *vertices,int vertexCount,const void *batches,int batchCount,const void *draws3d,int drawCount,const void *instances3d,int instanceCount,int color,unsigned int target);
 MR_IMPORT("mesh_upload") void mr_web_mesh_upload(unsigned int id,const void *vertices,int vertexCount,const void *indices,int indexCount);
 MR_IMPORT("mesh_update") void mr_web_mesh_update(unsigned int id,const void *vertices,int vertexCount);
@@ -79,6 +89,7 @@ static int puts(const char *s) { mr_log(s); return 0; }
 #define CloseWindow Win32CloseWindow
 #include <windows.h>
 #include <windowsx.h>
+#include <shellapi.h>
 #include <mmsystem.h>
 #ifndef WAVE_FORMAT_IEEE_FLOAT
 #define WAVE_FORMAT_IEEE_FLOAT 0x0003
@@ -164,8 +175,10 @@ static struct {
     Camera2D camera2d; Camera3D camera3d; bool camera2dActive,camera3dActive,scissorActive; Rectangle scissor; int blendMode;
     unsigned int renderTarget; int targetWidth,targetHeight;
     int width,height,fps; double start,previous,frameStart; float dt;
+    char *clipboardText; FilePathList droppedFiles;
 #ifdef _WIN32
-    HWND window;
+    HWND window; HICON bigIcon,smallIcon; bool fullscreen,borderless;
+    LONG_PTR windowedStyle,windowedExStyle; WINDOWPLACEMENT windowedPlacement;
 #endif
 } mr;
 static float mr_clamp01(float value);

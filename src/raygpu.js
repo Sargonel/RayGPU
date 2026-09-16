@@ -12,7 +12,7 @@
     let device, context, buffer, instanceBuffer3d, wasm, pipelines, pipeline3d, sampler, textureLayout, uniformLayout, shaderTextureLayout, defaultPipelineLayout, pipelineLayout, audioContext, masterGain;
     let depthTexture, depthWidth=0, depthHeight=0;
     const sounds = new Map();
-    let stopped = false, targetFPS = 60, lastFrame;
+    let stopped = false, targetFPS = 60, lastFrame, fullscreenPending = 0, fullscreenMode = 0;
     let displayWidth = 0, displayHeight = 0, displayDpr = 0, displayViewportWidth = 0, displayViewportHeight = 0;
     function updateCanvasDisplay(force = false) {
         const dpr = Math.max(window.devicePixelRatio || 1, 0.01);
@@ -27,6 +27,11 @@
         canvas.style.height = `${physicalHeight*scale}px`;
         displayWidth = canvas.width; displayHeight = canvas.height; displayDpr = dpr;
         displayViewportWidth = viewportWidth; displayViewportHeight = viewportHeight;
+    }
+    function retryFullscreen() {
+        if (!fullscreenPending || document.fullscreenElement || !canvas.requestFullscreen) return;
+        const mode = fullscreenPending; fullscreenPending = 0; fullscreenMode = mode;
+        canvas.requestFullscreen().catch(() => { fullscreenPending = mode; fullscreenMode = 0; });
     }
     function close() {
         if (stopped) return;
@@ -151,12 +156,26 @@
         sampler = device.createSampler({magFilter: "nearest", minFilter: "nearest",
             addressModeU: "repeat", addressModeV: "repeat"});
         const textDecoder = new TextDecoder();
+        const textEncoder = new TextEncoder();
         const fileCache = new Map();
+        let clipboardText = "";
+        let droppedNames = [];
         function readText(pointer) {
             const bytes = new Uint8Array(wasm.memory.buffer);
             let end = pointer;
             while (end < bytes.length && bytes[end]) end++;
             return textDecoder.decode(bytes.subarray(pointer, end));
+        }
+        function writeText(text, pointer, size) {
+            if (!pointer || size <= 0) return 0;
+            const encoded = textEncoder.encode(text), count = Math.min(encoded.length, size-1);
+            const destination = new Uint8Array(wasm.memory.buffer, pointer, size);
+            destination.set(encoded.subarray(0, count)); destination[count] = 0;
+            return count+1;
+        }
+        function refreshClipboard() {
+            if (navigator.clipboard && navigator.clipboard.readText)
+                navigator.clipboard.readText().then(text => { clipboardText = text; }).catch(() => {});
         }
         function loadFile(pointer) {
             const name = readText(pointer);
@@ -182,6 +201,42 @@
             sin: Math.sin, cos: Math.cos, math_pow: Math.pow, math_log: Math.log,
             math_exp: Math.exp, math_floor: Math.floor, math_ldexp: (value, exponent) => value*Math.pow(2, exponent),
             fps: fps => { targetFPS = fps; },
+            window_query: (command, index) => {
+                if (index !== 0 && command >= 3 && command <= 9) return 0;
+                const dpr = window.devicePixelRatio || 1;
+                if (command === 0) return document.fullscreenElement === canvas && fullscreenMode === 1 ? 1 : 0;
+                if (command === 1) return 1;
+                if (command === 2) return 0;
+                if (command === 3) return Math.round((screen.availLeft || 0)*dpr);
+                if (command === 4) return Math.round((screen.availTop || 0)*dpr);
+                if (command === 5) return Math.round(screen.width*dpr);
+                if (command === 6) return Math.round(screen.height*dpr);
+                if (command === 7 || command === 8) return 0;
+                if (command === 9) return Math.round(Number(screen.refreshRate) || 60);
+                if (command === 10) return Math.round(dpr*1000);
+                return 0;
+            },
+            window_text: (command, index, pointer, size) => command === 0 && index === 0 ? writeText("Browser display", pointer, size) : 0,
+            window_icon: (pointer, width, height) => {
+                if (!pointer || width <= 0 || height <= 0) return;
+                const pixels = new Uint8ClampedArray(wasm.memory.buffer, pointer, width*height*4).slice();
+                const iconCanvas = document.createElement("canvas"); iconCanvas.width = width; iconCanvas.height = height;
+                const iconContext = iconCanvas.getContext("2d"); if (!iconContext) return;
+                iconContext.putImageData(new ImageData(pixels, width, height), 0, 0);
+                let link = document.querySelector('link[rel~="icon"]');
+                if (!link) { link = document.createElement("link"); link.rel = "icon"; document.head.appendChild(link); }
+                link.href = iconCanvas.toDataURL("image/png");
+            },
+            clipboard_set: pointer => {
+                clipboardText = readText(pointer);
+                if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(clipboardText).catch(() => {});
+            },
+            clipboard_size: () => { refreshClipboard(); return textEncoder.encode(clipboardText).length+1; },
+            clipboard_get: (pointer, size) => writeText(clipboardText, pointer, size),
+            drop_count: () => droppedNames.length,
+            drop_name_size: index => index >= 0 && index < droppedNames.length ? textEncoder.encode(droppedNames[index]).length+1 : 0,
+            drop_name: (index, pointer, size) => index >= 0 && index < droppedNames.length ? writeText(droppedNames[index], pointer, size) : 0,
+            drop_clear: () => { droppedNames = []; },
             audio_init: () => {
                 if (!audioContext) {
                     const AudioContextClass = window.AudioContext || window.webkitAudioContext;
@@ -286,6 +341,19 @@
             window_command: (command, a, b, text) => {
                 if (command === 0) document.title = readText(text);
                 else if (command === 1 && a > 0 && b > 0) { canvas.width = a; canvas.height = b; updateCanvasDisplay(true); }
+                else if (command === 2 || command === 3) {
+                    const mode = command === 2 ? 1 : 2;
+                    fullscreenPending = 0;
+                    if (document.fullscreenElement) {
+                        if (fullscreenMode === mode) document.exitFullscreen().catch(() => {});
+                        else fullscreenMode = mode;
+                    } else if (canvas.requestFullscreen) {
+                        fullscreenMode = mode;
+                        canvas.requestFullscreen().catch(() => { fullscreenPending = mode; fullscreenMode = 0; });
+                    }
+                }
+                else if (command === 5) canvas.style.opacity = String(Math.max(0, Math.min(255, a))/255);
+                else if (command === 6) canvas.focus();
             },
             texture: (id, pointer, width, height) => {
                 const texture = device.createTexture({size: [width, height], format: "rgba8unorm",
@@ -461,6 +529,7 @@
             return keyCodes[code] || 0;
         }
         function keyboard(event) {
+            if (event.type === "keydown") retryFullscreen();
             const key = raygpuKey(event.code);
             if (key) {
                 if (event.type === "keydown" && audioContext && audioContext.state === "suspended") audioContext.resume();
@@ -475,6 +544,18 @@
         window.addEventListener("keydown", keyboard, {signal: events.signal});
         window.addEventListener("keyup", keyboard, {signal: events.signal});
         window.addEventListener("resize", () => updateCanvasDisplay(true), {signal: events.signal});
+        document.addEventListener("fullscreenchange", () => { if (!document.fullscreenElement) fullscreenMode = 0; }, {signal: events.signal});
+        window.addEventListener("paste", event => { clipboardText = event.clipboardData ? event.clipboardData.getData("text") : clipboardText; }, {signal: events.signal});
+        window.addEventListener("dragover", event => event.preventDefault(), {signal: events.signal});
+        window.addEventListener("drop", event => {
+            event.preventDefault();
+            const files = Array.from(event.dataTransfer ? event.dataTransfer.files : []);
+            Promise.all(files.map(async (file, index) => {
+                let name = file.name || `dropped-${index}`;
+                if (files.some((other, otherIndex) => otherIndex < index && other.name === file.name)) name = `${index}-${name}`;
+                return {name, data:new Uint8Array(await file.arrayBuffer())};
+            })).then(entries => { if (!stopped) { droppedNames = entries.map(entry => entry.name); for (const entry of entries) fileCache.set(entry.name, entry.data); } }).catch(() => {});
+        }, {signal: events.signal});
         window.addEventListener("focus", () => wasm.raygpu_focus(1), {signal: events.signal});
         window.addEventListener("blur", () => { wasm.raygpu_focus(0); wasm.raygpu_blur(); }, {signal: events.signal});
         document.addEventListener("visibilitychange", () => {
@@ -489,6 +570,7 @@
                 (event.clientY-bounds.top)*canvas.height/bounds.height,
                 event.type === "pointermove" ? -1 : button(event.button), event.type === "pointerdown" ? 1 : 0);
             if (event.type === "pointerdown") {
+                retryFullscreen();
                 if (audioContext && audioContext.state === "suspended") audioContext.resume();
                 canvas.focus(); canvas.setPointerCapture(event.pointerId);
             }

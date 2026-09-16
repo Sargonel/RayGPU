@@ -197,10 +197,21 @@ smaller, the canvas shrinks uniformly to the largest size that preserves its
 aspect ratio. Browser zoom, window resizing, and monitor DPI changes update the
 display size automatically.
 
+Browser fullscreen uses the Fullscreen API and therefore follows the browser's
+user-gesture rules. If a fullscreen request is rejected outside a gesture,
+RayGPU retries it on the next key press or pointer press. Browsers expose one
+current display through the synchronous monitor API; physical millimeter sizes
+return zero when the browser does not provide them. Clipboard reads return the
+latest text made available by a RayGPU write, the Clipboard API, or a paste
+event. Dropped browser files receive virtual names that can be passed directly
+to RayGPU file-loading functions.
+
 ## Supported features
 
-- Window creation, resizing, DPI-aware dimensions, focus state, timing, FPS
-  limiting, title/position/size controls, and native minimize/maximize/restore.
+- Window creation, resizing, DPI-aware dimensions, fullscreen and borderless
+  modes, focus state, timing, FPS limiting, title/position/size controls,
+  monitor queries and selection, window icons and opacity, clipboard text,
+  dropped files, and native minimize/maximize/restore.
 - Complete raylib keyboard constants; press, repeat, release, Unicode character
   queues, mouse buttons, position, delta, wheel, offset, and scaling.
 - Complete raylib 2D shapes, gradients, polygons, splines, 2D collisions, 2D
@@ -396,8 +407,6 @@ complete binding contract.
 ## Remaining core, 2D, and audio work
 
 - Gamepads, vibration, touch input, gestures, and cursor management.
-- Fullscreen, borderless mode, monitor selection/information, window icons,
-  opacity, clipboard, and dropped files.
 - Directory listing, URL opening, compression, logging callbacks, and
   automation events.
 
