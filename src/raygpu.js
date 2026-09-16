@@ -13,6 +13,21 @@
     let depthTexture, depthWidth=0, depthHeight=0;
     const sounds = new Map();
     let stopped = false, targetFPS = 60, lastFrame;
+    let displayWidth = 0, displayHeight = 0, displayDpr = 0, displayViewportWidth = 0, displayViewportHeight = 0;
+    function updateCanvasDisplay(force = false) {
+        const dpr = Math.max(window.devicePixelRatio || 1, 0.01);
+        const viewportWidth = window.innerWidth;
+        const viewportHeight = window.innerHeight;
+        if (!force && displayWidth === canvas.width && displayHeight === canvas.height && displayDpr === dpr &&
+            displayViewportWidth === viewportWidth && displayViewportHeight === viewportHeight) return;
+        const physicalWidth = canvas.width/dpr;
+        const physicalHeight = canvas.height/dpr;
+        const scale = Math.min(1, viewportWidth/physicalWidth, viewportHeight/physicalHeight);
+        canvas.style.width = `${physicalWidth*scale}px`;
+        canvas.style.height = `${physicalHeight*scale}px`;
+        displayWidth = canvas.width; displayHeight = canvas.height; displayDpr = dpr;
+        displayViewportWidth = viewportWidth; displayViewportHeight = viewportHeight;
+    }
     function close() {
         if (stopped) return;
         stopped = true;
@@ -264,12 +279,13 @@
             },
             init: (width, height, title) => {
                 canvas.width = width; canvas.height = height;
+                updateCanvasDisplay(true);
                 document.title = readText(title);
                 context.configure({device, format, alphaMode: "opaque"});
             },
             window_command: (command, a, b, text) => {
                 if (command === 0) document.title = readText(text);
-                else if (command === 1 && a > 0 && b > 0) { canvas.width = a; canvas.height = b; }
+                else if (command === 1 && a > 0 && b > 0) { canvas.width = a; canvas.height = b; updateCanvasDisplay(true); }
             },
             texture: (id, pointer, width, height) => {
                 const texture = device.createTexture({size: [width, height], format: "rgba8unorm",
@@ -458,6 +474,7 @@
         }
         window.addEventListener("keydown", keyboard, {signal: events.signal});
         window.addEventListener("keyup", keyboard, {signal: events.signal});
+        window.addEventListener("resize", () => updateCanvasDisplay(true), {signal: events.signal});
         window.addEventListener("focus", () => wasm.raygpu_focus(1), {signal: events.signal});
         window.addEventListener("blur", () => { wasm.raygpu_focus(0); wasm.raygpu_blur(); }, {signal: events.signal});
         document.addEventListener("visibilitychange", () => {
@@ -485,6 +502,7 @@
         canvas.addEventListener("contextmenu", event => event.preventDefault(), {signal: events.signal});
         function frame(timestamp) {
             if (stopped) return;
+            updateCanvasDisplay();
             const interval = targetFPS > 0 ? 1000/targetFPS : 0;
             if (lastFrame === undefined || timestamp-lastFrame >= interval-0.5) {
                 lastFrame = timestamp;

@@ -191,6 +191,12 @@ Upload the contents of `build/web` to any static host. The host must:
 The server does not need Emscripten, Dawn, Node.js, PowerShell, or a C compiler.
 Opening `index.html` through a `file://` URL is not supported.
 
+The web bridge uses `window.devicePixelRatio` so one logical RayGPU pixel maps
+to one physical display pixel when the canvas fits. If the browser viewport is
+smaller, the canvas shrinks uniformly to the largest size that preserves its
+aspect ratio. Browser zoom, window resizing, and monitor DPI changes update the
+display size automatically.
+
 ## Supported features
 
 - Window creation, resizing, DPI-aware dimensions, focus state, timing, FPS
