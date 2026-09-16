@@ -174,7 +174,7 @@ static struct {
     Vector2 mouse,mouseDelta,wheel,mouseOffset,mouseScale; Color clear; Texture2D shapesTexture; Rectangle shapesSource;
     Camera2D camera2d; Camera3D camera3d; bool camera2dActive,camera3dActive,scissorActive; Rectangle scissor; int blendMode;
     unsigned int renderTarget; int targetWidth,targetHeight;
-    int width,height,fps; double start,previous,frameStart; float dt;
+    int width,height,fps; unsigned int flags; double start,previous,frameStart; float dt;
     char *clipboardText; FilePathList droppedFiles;
 #ifdef _WIN32
     HWND window; HICON bigIcon,smallIcon; bool fullscreen,borderless;

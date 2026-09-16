@@ -1,5 +1,5 @@
 /* RayGPU model importers. Compiled through raygpu.c.
- * Copyright (c) 2026 Sargonel. Distributed under the zlib license. */
+ * Copyright (c) 2026 Sargonel. Distributed under the MIT license. */
 /* Portable C17 limits also avoid Windows SDK integer suffixes in IntelliSense. */
 #define MR_FMT_UINT32_MAX 4294967295u
 #define MR_FMT_INT32_MAX 2147483647

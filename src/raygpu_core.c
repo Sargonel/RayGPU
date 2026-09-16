@@ -1,6 +1,8 @@
 /* RayGPU core module. Compiled through raygpu.c; do not compile separately. */
+static unsigned int mr_config_flags;
 static void mr_error(const char *s) { puts(s); mr.error=true; mr.close=true; }
 static void mr_shader_texture_changed(unsigned int textureId,bool removed);
+void SetConfigFlags(unsigned int flags) { mr_config_flags|=flags; }
 #ifdef _WIN32
 static WGPUStringView mr_string(const char *s) { return (WGPUStringView){s,WGPU_STRLEN}; }
 static void mr_message(const char *prefix,WGPUStringView message) {
@@ -124,6 +126,12 @@ static HMONITOR mr_get_monitor(int index) {
 static int mr_monitor_index(HMONITOR monitor) {
     MRMonitorList list=mr_get_monitors(); for(int i=0;i<list.count;i++)if(list.handles[i]==monitor)return i; return 0;
 }
+static DWORD mr_window_style(unsigned int flags) {
+    if(flags&FLAG_WINDOW_UNDECORATED)return WS_POPUP;
+    DWORD style=WS_OVERLAPPED|WS_CAPTION|WS_SYSMENU|WS_MINIMIZEBOX;
+    if(flags&FLAG_WINDOW_RESIZABLE)style|=WS_THICKFRAME|WS_MAXIMIZEBOX;
+    return style;
+}
 static void mr_release_path_list(FilePathList files) {
     if(files.paths){for(unsigned int i=0;i<files.count;i++)MemFree(files.paths[i]);MemFree(files.paths);}
 }
@@ -145,7 +153,8 @@ static void mr_set_fullscreen_mode(bool fullscreen,bool borderless) {
     }
     HMONITOR monitor=MonitorFromWindow(mr.window,MONITOR_DEFAULTTONEAREST);
     MONITORINFO info={0};info.cbSize=sizeof info;if(!GetMonitorInfoA(monitor,&info))return;
-    SetWindowLongPtrA(mr.window,GWL_STYLE,WS_POPUP|WS_VISIBLE);
+    LONG_PTR currentStyle=GetWindowLongPtrA(mr.window,GWL_STYLE);
+    SetWindowLongPtrA(mr.window,GWL_STYLE,WS_POPUP|(currentStyle&WS_VISIBLE));
     SetWindowLongPtrA(mr.window,GWL_EXSTYLE,mr.windowedExStyle&~(WS_EX_CLIENTEDGE|WS_EX_WINDOWEDGE));
     SetWindowPos(mr.window,HWND_TOP,info.rcMonitor.left,info.rcMonitor.top,
         info.rcMonitor.right-info.rcMonitor.left,info.rcMonitor.bottom-info.rcMonitor.top,
@@ -164,8 +173,9 @@ static LRESULT CALLBACK mr_window_proc(HWND window,UINT message,WPARAM w,LPARAM 
     case WM_GETMINMAXINFO: {
         MINMAXINFO *limits=(MINMAXINFO *)l;
         RECT minRect={0,0,mr.minWidth,mr.minHeight},maxRect={0,0,mr.maxWidth,mr.maxHeight};
-        if (mr.minWidth>0 && mr.minHeight>0) { AdjustWindowRect(&minRect,WS_OVERLAPPEDWINDOW,FALSE); limits->ptMinTrackSize=(POINT){minRect.right-minRect.left,minRect.bottom-minRect.top}; }
-        if (mr.maxWidth>0 && mr.maxHeight>0) { AdjustWindowRect(&maxRect,WS_OVERLAPPEDWINDOW,FALSE); limits->ptMaxTrackSize=(POINT){maxRect.right-maxRect.left,maxRect.bottom-maxRect.top}; }
+        DWORD style=(DWORD)(mr.window?GetWindowLongPtrA(mr.window,GWL_STYLE):mr_window_style(mr.flags));
+        if (mr.minWidth>0 && mr.minHeight>0) { AdjustWindowRect(&minRect,style,FALSE); limits->ptMinTrackSize=(POINT){minRect.right-minRect.left,minRect.bottom-minRect.top}; }
+        if (mr.maxWidth>0 && mr.maxHeight>0) { AdjustWindowRect(&maxRect,style,FALSE); limits->ptMaxTrackSize=(POINT){maxRect.right-maxRect.left,maxRect.bottom-maxRect.top}; }
         return 0;
     }
     case WM_KEYDOWN: case WM_SYSKEYDOWN: case WM_KEYUP: case WM_SYSKEYUP: {
@@ -552,7 +562,7 @@ static bool mr_resize_depth(int width,int height) {
 }
 void InitWindow(int width,int height,const char *title) {
     if (mr.instance) { fprintf(stderr,"raygpu: only one window is supported\n"); return; }
-    memset(&mr,0,sizeof mr); mr.fps=60; mr.dt=1.0f/60; mr.clear=BLACK; mr.exitKey=KEY_ESCAPE; mr.focused=true; mr.mouseScale=(Vector2){1,1};
+    memset(&mr,0,sizeof mr); mr.flags=mr_config_flags; mr.fps=60; mr.dt=1.0f/60; mr.clear=BLACK; mr.exitKey=KEY_ESCAPE; mr.focused=true; mr.mouseScale=(Vector2){1,1};
     mr.start=mr.previous=mr_clock();
     if (width<=0 || height<=0 || width>8192 || height>8192) { mr_error("Invalid window size"); return; }
     mr.width=width; mr.height=height;
@@ -565,15 +575,26 @@ void InitWindow(int width,int height,const char *title) {
     WNDCLASSA wc={0}; wc.lpfnWndProc=mr_window_proc; wc.hInstance=module;
     wc.lpszClassName="RaygpuWebGPU"; wc.hCursor=LoadCursor(NULL,IDC_ARROW);
     if (!RegisterClassA(&wc) && GetLastError()!=ERROR_CLASS_ALREADY_EXISTS) { mr_error("Cannot register window"); return; }
-    RECT rect={0,0,width,height}; AdjustWindowRect(&rect,WS_OVERLAPPEDWINDOW,FALSE);
+    DWORD windowStyle=mr_window_style(mr.flags),windowExStyle=0;
+    if(mr.flags&FLAG_WINDOW_TOPMOST)windowExStyle|=WS_EX_TOPMOST;
+    if((mr.flags&FLAG_WINDOW_MOUSE_PASSTHROUGH)&&(mr.flags&FLAG_WINDOW_UNDECORATED))windowExStyle|=WS_EX_TRANSPARENT;
+    RECT rect={0,0,width,height}; AdjustWindowRect(&rect,windowStyle,FALSE);
     int windowWidth=rect.right-rect.left,windowHeight=rect.bottom-rect.top,windowX=CW_USEDEFAULT,windowY=CW_USEDEFAULT;
     POINT origin={0,0};HMONITOR monitor=MonitorFromPoint(origin,MONITOR_DEFAULTTOPRIMARY);MONITORINFO monitorInfo={0};monitorInfo.cbSize=sizeof monitorInfo;
     if(monitor&&GetMonitorInfoA(monitor,&monitorInfo)){int workWidth=monitorInfo.rcWork.right-monitorInfo.rcWork.left,workHeight=monitorInfo.rcWork.bottom-monitorInfo.rcWork.top;windowX=monitorInfo.rcWork.left+(workWidth-windowWidth)/2;windowY=monitorInfo.rcWork.top+(workHeight-windowHeight)/2;}
-    mr.window=CreateWindowExA(0,wc.lpszClassName,title,WS_OVERLAPPEDWINDOW,windowX,windowY,
+    mr.window=CreateWindowExA(windowExStyle,wc.lpszClassName,title,windowStyle,windowX,windowY,
         windowWidth,windowHeight,NULL,NULL,module,NULL);
     if (!mr.window) { mr_error("Cannot create window"); return; }
     DragAcceptFiles(mr.window,TRUE);
-    ShowWindow(mr.window,SW_SHOW);
+    if(!(mr.flags&FLAG_WINDOW_HIDDEN)) {
+        int show=SW_SHOW;
+        if(mr.flags&FLAG_WINDOW_MINIMIZED)show=SW_SHOWMINIMIZED;
+        else if(mr.flags&FLAG_WINDOW_MAXIMIZED)show=SW_SHOWMAXIMIZED;
+        else if(mr.flags&FLAG_WINDOW_UNFOCUSED)show=SW_SHOWNOACTIVATE;
+        ShowWindow(mr.window,show);
+    }
+    if(mr.flags&FLAG_FULLSCREEN_MODE)mr_set_fullscreen_mode(true,false);
+    else if(mr.flags&FLAG_BORDERLESS_WINDOWED_MODE)mr_set_fullscreen_mode(false,true);
     mr.instance=wgpuCreateInstance(NULL);
     if (!mr.instance) { mr_error("Cannot create WebGPU instance"); CloseWindow(); return; }
     WGPUSurfaceDescriptor surface=WGPU_SURFACE_DESCRIPTOR_INIT;
@@ -604,10 +625,10 @@ void InitWindow(int width,int height,const char *title) {
 #else
 void InitWindow(int width,int height,const char *title) {
     if (mr.ready) return;
-    memset(&mr,0,sizeof mr); mr.fps=60; mr.dt=1.0f/60; mr.clear=BLACK; mr.exitKey=KEY_ESCAPE; mr.focused=true; mr.mouseScale=(Vector2){1,1};
+    memset(&mr,0,sizeof mr); mr.flags=mr_config_flags; mr.fps=60; mr.dt=1.0f/60; mr.clear=BLACK; mr.exitKey=KEY_ESCAPE; mr.focused=true; mr.mouseScale=(Vector2){1,1};
     if (width<=0 || height<=0 || width>8192 || height>8192) { mr_error("Invalid window size"); return; }
     mr.width=width; mr.height=height; mr.start=mr.previous=mr_clock();
-    mr_web_init(width,height,title); mr.ready=true;
+    mr_web_init(width,height,title); mr_web_window_command(7,(int)mr.flags,0,NULL); mr.ready=true;
     const unsigned char white[4]={255,255,255,255}; mr.white=LoadTextureRGBA(white,1,1).id;
     mr.shapesTexture=(Texture2D){mr.white,1,1,1,7}; mr.shapesSource=(Rectangle){0,0,1,1};
     puts("raygpu: WebGPU renderer ready");
@@ -814,7 +835,7 @@ void SetWindowMonitor(int monitor) {
 void SetWindowSize(int width,int height) {
     if (width<=0 || height<=0 || width>8192 || height>8192) return;
 #ifdef _WIN32
-    if (mr.window) { RECT rect={0,0,width,height}; AdjustWindowRect(&rect,WS_OVERLAPPEDWINDOW,FALSE); SetWindowPos(mr.window,NULL,0,0,rect.right-rect.left,rect.bottom-rect.top,SWP_NOMOVE|SWP_NOZORDER|SWP_NOACTIVATE); }
+    if (mr.window) { DWORD style=(DWORD)GetWindowLongPtrA(mr.window,GWL_STYLE); RECT rect={0,0,width,height}; AdjustWindowRect(&rect,style,FALSE); SetWindowPos(mr.window,NULL,0,0,rect.right-rect.left,rect.bottom-rect.top,SWP_NOMOVE|SWP_NOZORDER|SWP_NOACTIVATE); }
 #else
     mr.width=width; mr.height=height; mr.resized=true; mr_web_window_command(1,width,height,NULL);
 #endif

@@ -354,6 +354,14 @@
                 }
                 else if (command === 5) canvas.style.opacity = String(Math.max(0, Math.min(255, a))/255);
                 else if (command === 6) canvas.focus();
+                else if (command === 7) {
+                    if (a & 0x80) canvas.style.display = "none";
+                    const mode = (a & 0x02) ? 1 : ((a & 0x8000) ? 2 : 0);
+                    if (mode && canvas.requestFullscreen) {
+                        fullscreenMode = mode;
+                        canvas.requestFullscreen().catch(() => { fullscreenPending = mode; fullscreenMode = 0; });
+                    }
+                }
             },
             texture: (id, pointer, width, height) => {
                 const texture = device.createTexture({size: [width, height], format: "rgba8unorm",

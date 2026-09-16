@@ -44,6 +44,14 @@ int main(void)
 `RunMainLoop()` is required because native Windows uses a normal blocking loop,
 while the browser uses `requestAnimationFrame()`.
 
+Like raylib, native windows have a fixed size by default. Enable resizing before
+creating the window:
+
+```c
+SetConfigFlags(FLAG_WINDOW_RESIZABLE);
+InitWindow(800, 450, "Resizable RayGPU window");
+```
+
 ## Source layout
 
 `src/raygpu.h` is the public API. Add `src/` to the compiler include path and
@@ -444,6 +452,6 @@ complete binding contract.
 
 ## License
 
-RayGPU is distributed under the zlib license. See [`LICENSE`](LICENSE).
+RayGPU is distributed under the MIT license. See [`LICENSE`](LICENSE).
 The stb, Model3D, and meshoptimizer licenses remain included in their headers
 under `src/external/`.

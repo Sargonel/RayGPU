@@ -1,5 +1,5 @@
 /* RayGPU: independent, raylib-inspired WebGPU library.
- * Copyright (c) 2026 Sargonel. Distributed under the zlib license.
+ * Copyright (c) 2026 Sargonel. Distributed under the MIT license.
  * Include this header and compile src/raygpu.c alongside your application.
  * Windows uses Dawn + Win32; web uses freestanding Clang WASM + raygpu.js.
  * The API is inspired by raylib by Ramon Santamaria (zlib license).
@@ -180,7 +180,26 @@ typedef enum ShaderUniformDataType {
     SHADER_UNIFORM_FLOAT=0,SHADER_UNIFORM_VEC2,SHADER_UNIFORM_VEC3,SHADER_UNIFORM_VEC4,
     SHADER_UNIFORM_INT,SHADER_UNIFORM_IVEC2,SHADER_UNIFORM_IVEC3,SHADER_UNIFORM_IVEC4,SHADER_UNIFORM_SAMPLER2D
 } ShaderUniformDataType;
+typedef enum ConfigFlags {
+    FLAG_VSYNC_HINT=0x00000040,
+    FLAG_FULLSCREEN_MODE=0x00000002,
+    FLAG_WINDOW_RESIZABLE=0x00000004,
+    FLAG_WINDOW_UNDECORATED=0x00000008,
+    FLAG_WINDOW_HIDDEN=0x00000080,
+    FLAG_WINDOW_MINIMIZED=0x00000200,
+    FLAG_WINDOW_MAXIMIZED=0x00000400,
+    FLAG_WINDOW_UNFOCUSED=0x00000800,
+    FLAG_WINDOW_TOPMOST=0x00001000,
+    FLAG_WINDOW_ALWAYS_RUN=0x00000100,
+    FLAG_WINDOW_TRANSPARENT=0x00000010,
+    FLAG_WINDOW_HIGHDPI=0x00002000,
+    FLAG_WINDOW_MOUSE_PASSTHROUGH=0x00004000,
+    FLAG_BORDERLESS_WINDOWED_MODE=0x00008000,
+    FLAG_MSAA_4X_HINT=0x00000020,
+    FLAG_INTERLACED_HINT=0x00010000
+} ConfigFlags;
 enum { MOUSE_BUTTON_LEFT, MOUSE_BUTTON_RIGHT, MOUSE_BUTTON_MIDDLE };
+void SetConfigFlags(unsigned int flags);
 void InitWindow(int width,int height,const char *title);
 void RunMainLoop(void (*updateDraw)(void));
 float Sin(float radians);

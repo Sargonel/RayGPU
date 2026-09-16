@@ -1,5 +1,5 @@
 /* RayGPU implementation entry point. Compile once alongside your application.
- * Copyright (c) 2026 Sargonel. Distributed under the zlib license.
+ * Copyright (c) 2026 Sargonel. Distributed under the MIT license.
  * Modules share private state within this translation unit. */
 #include "raygpu_internal.h"
 #include "raygpu_core.c"
