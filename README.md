@@ -384,8 +384,8 @@ Declarations can appear in either shader stage and do not depend on the order
 of `GetShaderLocation()` calls. If a shader contains no declarations, RayGPU
 keeps the earlier compatibility behavior and assigns locations in first-use
 order. New shaders should use declarations so misspellings are detected and C
-and WGSL stay synchronized. See the extra-sampler shader in [`main.c`](main.c) or
-[`examples/snake.c`](examples/snake.c) for complete examples.
+and WGSL stay synchronized. The sampler and uniform snippets above show the
+complete binding contract.
 
 ## Remaining core, 2D, and audio work
 
