@@ -161,6 +161,9 @@ typedef enum PixelFormat {
     PIXELFORMAT_UNCOMPRESSED_R5G5B5A1,PIXELFORMAT_UNCOMPRESSED_R4G4B4A4,
     PIXELFORMAT_UNCOMPRESSED_R8G8B8A8
 } PixelFormat;
+typedef enum FontType {
+    FONT_DEFAULT=0, FONT_BITMAP, FONT_SDF
+} FontType;
 typedef enum TextureWrap {
     TEXTURE_WRAP_REPEAT=0, TEXTURE_WRAP_CLAMP, TEXTURE_WRAP_MIRROR_REPEAT, TEXTURE_WRAP_MIRROR_CLAMP
 } TextureWrap;
@@ -422,6 +425,11 @@ Font GetFontDefault(void);
 Font LoadFont(const char *fileName);
 Font LoadFontEx(const char *fileName,int fontSize,int *codepoints,int codepointCount);
 Font LoadFontFromMemory(const char *fileType,const unsigned char *fileData,int dataSize,int fontSize,int *codepoints,int codepointCount);
+Font LoadFontFromImage(Image image,Color key,int firstChar);
+GlyphInfo *LoadFontData(const unsigned char *fileData,int dataSize,int fontSize,int *codepoints,int codepointCount,int type);
+Image GenImageFontAtlas(const GlyphInfo *glyphs,Rectangle **glyphRecs,int glyphCount,int fontSize,int padding,int packMethod);
+void UnloadFontData(GlyphInfo *glyphs,int glyphCount);
+bool ExportFontAsCode(Font font,const char *fileName);
 bool IsFontValid(Font font);
 void UnloadFont(Font font);
 void DrawTextEx(Font font,const char *text,Vector2 position,float fontSize,float spacing,Color tint);

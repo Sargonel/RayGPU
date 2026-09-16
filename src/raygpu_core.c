@@ -491,8 +491,11 @@ void InitWindow(int width,int height,const char *title) {
     wc.lpszClassName="RaygpuWebGPU"; wc.hCursor=LoadCursor(NULL,IDC_ARROW);
     if (!RegisterClassA(&wc) && GetLastError()!=ERROR_CLASS_ALREADY_EXISTS) { mr_error("Cannot register window"); return; }
     RECT rect={0,0,width,height}; AdjustWindowRect(&rect,WS_OVERLAPPEDWINDOW,FALSE);
-    mr.window=CreateWindowExA(0,wc.lpszClassName,title,WS_OVERLAPPEDWINDOW,CW_USEDEFAULT,CW_USEDEFAULT,
-        rect.right-rect.left,rect.bottom-rect.top,NULL,NULL,module,NULL);
+    int windowWidth=rect.right-rect.left,windowHeight=rect.bottom-rect.top,windowX=CW_USEDEFAULT,windowY=CW_USEDEFAULT;
+    POINT origin={0,0};HMONITOR monitor=MonitorFromPoint(origin,MONITOR_DEFAULTTOPRIMARY);MONITORINFO monitorInfo={0};monitorInfo.cbSize=sizeof monitorInfo;
+    if(monitor&&GetMonitorInfoA(monitor,&monitorInfo)){int workWidth=monitorInfo.rcWork.right-monitorInfo.rcWork.left,workHeight=monitorInfo.rcWork.bottom-monitorInfo.rcWork.top;windowX=monitorInfo.rcWork.left+(workWidth-windowWidth)/2;windowY=monitorInfo.rcWork.top+(workHeight-windowHeight)/2;}
+    mr.window=CreateWindowExA(0,wc.lpszClassName,title,WS_OVERLAPPEDWINDOW,windowX,windowY,
+        windowWidth,windowHeight,NULL,NULL,module,NULL);
     if (!mr.window) { mr_error("Cannot create window"); return; }
     ShowWindow(mr.window,SW_SHOW);
     mr.instance=wgpuCreateInstance(NULL);

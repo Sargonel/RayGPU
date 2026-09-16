@@ -239,9 +239,11 @@ Opening `index.html` through a `file://` URL is not supported.
   MagicaVoxel VOX v150/v200 colored surface meshes; and binary/compressed/ASCII
   M3D models, materials, embedded textures, bones, and interpolated animations.
   Large imported meshes are split into batches of at most 65,535 vertices.
-- PNG, JPEG, BMP, TGA, GIF, QOI, and DDS decoding from files or memory,
-  including animated GIF sequences through
-  `LoadImageAnim()`/`LoadImageAnimFromMemory()`, plus raw pixel loading.
+- PNG, JPEG, BMP, TGA, GIF, QOI, and DDS decoding from files or memory, plus
+  raw pixel loading. Animated GIF sequences are available through
+  `LoadImageAnim()`/`LoadImageAnimFromMemory()`. DDS supports uncompressed
+  RGBA, DXT1/BC1, DXT3/BC2, DXT5/BC3, BC4/ATI1, and BC5/ATI2, including DX10
+  headers for the supported BC formats.
 - Image creation, copying, cropping, resizing, flipping, arbitrary rotation,
   alpha/color processing, palettes, blur, convolution, dithering, channel
   extraction, CPU drawing, and procedural gradients/noise/cellular images.
@@ -277,13 +279,17 @@ LoadImageFromTextureAsync(target.texture, OnReadback, NULL);
   scissor rectangles.
 - Custom WGSL vertex and fragment shaders with float, vector, integer, array,
   and matrix uniform uploads.
-- Built-in text plus TTF/OTF loading from files or memory, UTF-8 drawing,
-  rotated text, measurement, and glyph lookup.
+- Built-in text plus TTF/OTF and image-font loading, UTF-8 drawing, rotated
+  text, measurement, and glyph lookup. `LoadFontData()` exposes bitmap or SDF
+  glyph images, `GenImageFontAtlas()` packs them into an atlas, and
+  `ExportFontAsCode()` exports atlas pixels, dimensions, rectangles, and glyph
+  metrics. Release arrays returned by `LoadFontData()` with `UnloadFontData()`.
 - WAV, OGG Vorbis, MP3, QOA, FLAC, XM, and MOD loading from files or memory;
   sound and music playback with pause, resume, seek, looping, volume, pitch,
   pan, and time queries; double-buffered music and procedural audio streams;
-  stream and mixed processors; and WAV or C-header export. Compressed music is
-  decoded to PCM when loaded, then queued to the audio device in stream chunks.
+  stream and mixed processors; and WAV or C-header export. Music keeps its
+  decoder state and incrementally decodes stream-sized chunks, so compressed
+  tracks are not expanded into a full PCM copy at load time.
 - Binary/text file loading and saving, path inspection, memory allocation,
   Base64 encoding/decoding, CRC32/MD5/SHA1 hashing, random-number utilities,
   and common color/text helpers. Browser saves use a normal file download.
@@ -354,10 +360,6 @@ and WGSL stay synchronized. See the shader in [`main.c`](main.c) or
 
 ## Remaining core, 2D, and audio work
 
-- Incremental compressed-music decoding instead of the current load-time PCM
-  decode.
-- Additional compressed DDS variants.
-- Image-based fonts, font-data extraction, and font-atlas export helpers.
 - Extra shader texture samplers and shader attribute reflection.
 - Gamepads, vibration, touch input, gestures, and cursor management.
 - Fullscreen, borderless mode, monitor selection/information, window icons,
