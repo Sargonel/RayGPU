@@ -153,6 +153,37 @@ typedef enum KeyboardKey {
     KEY_LEFT_SUPER=343, KEY_RIGHT_SHIFT=344, KEY_RIGHT_CONTROL=345,
     KEY_RIGHT_ALT=346, KEY_RIGHT_SUPER=347, KEY_KB_MENU=348
 } KeyboardKey;
+typedef enum MouseButton {
+    MOUSE_BUTTON_LEFT=0, MOUSE_BUTTON_RIGHT, MOUSE_BUTTON_MIDDLE,
+    MOUSE_BUTTON_SIDE, MOUSE_BUTTON_EXTRA, MOUSE_BUTTON_FORWARD, MOUSE_BUTTON_BACK
+} MouseButton;
+typedef enum MouseCursor {
+    MOUSE_CURSOR_DEFAULT=0, MOUSE_CURSOR_ARROW, MOUSE_CURSOR_IBEAM,
+    MOUSE_CURSOR_CROSSHAIR, MOUSE_CURSOR_POINTING_HAND, MOUSE_CURSOR_RESIZE_EW,
+    MOUSE_CURSOR_RESIZE_NS, MOUSE_CURSOR_RESIZE_NWSE, MOUSE_CURSOR_RESIZE_NESW,
+    MOUSE_CURSOR_RESIZE_ALL, MOUSE_CURSOR_NOT_ALLOWED
+} MouseCursor;
+typedef enum GamepadButton {
+    GAMEPAD_BUTTON_UNKNOWN=0, GAMEPAD_BUTTON_LEFT_FACE_UP,
+    GAMEPAD_BUTTON_LEFT_FACE_RIGHT, GAMEPAD_BUTTON_LEFT_FACE_DOWN,
+    GAMEPAD_BUTTON_LEFT_FACE_LEFT, GAMEPAD_BUTTON_RIGHT_FACE_UP,
+    GAMEPAD_BUTTON_RIGHT_FACE_RIGHT, GAMEPAD_BUTTON_RIGHT_FACE_DOWN,
+    GAMEPAD_BUTTON_RIGHT_FACE_LEFT, GAMEPAD_BUTTON_LEFT_TRIGGER_1,
+    GAMEPAD_BUTTON_LEFT_TRIGGER_2, GAMEPAD_BUTTON_RIGHT_TRIGGER_1,
+    GAMEPAD_BUTTON_RIGHT_TRIGGER_2, GAMEPAD_BUTTON_MIDDLE_LEFT,
+    GAMEPAD_BUTTON_MIDDLE, GAMEPAD_BUTTON_MIDDLE_RIGHT,
+    GAMEPAD_BUTTON_LEFT_THUMB, GAMEPAD_BUTTON_RIGHT_THUMB
+} GamepadButton;
+typedef enum GamepadAxis {
+    GAMEPAD_AXIS_LEFT_X=0, GAMEPAD_AXIS_LEFT_Y, GAMEPAD_AXIS_RIGHT_X,
+    GAMEPAD_AXIS_RIGHT_Y, GAMEPAD_AXIS_LEFT_TRIGGER, GAMEPAD_AXIS_RIGHT_TRIGGER
+} GamepadAxis;
+typedef enum Gesture {
+    GESTURE_NONE=0, GESTURE_TAP=1, GESTURE_DOUBLETAP=2, GESTURE_HOLD=4,
+    GESTURE_DRAG=8, GESTURE_SWIPE_RIGHT=16, GESTURE_SWIPE_LEFT=32,
+    GESTURE_SWIPE_UP=64, GESTURE_SWIPE_DOWN=128,
+    GESTURE_PINCH_IN=256, GESTURE_PINCH_OUT=512
+} Gesture;
 typedef enum TextureFilter {
     TEXTURE_FILTER_POINT=0, TEXTURE_FILTER_BILINEAR, TEXTURE_FILTER_TRILINEAR,
     TEXTURE_FILTER_ANISOTROPIC_4X, TEXTURE_FILTER_ANISOTROPIC_8X, TEXTURE_FILTER_ANISOTROPIC_16X
@@ -198,7 +229,6 @@ typedef enum ConfigFlags {
     FLAG_MSAA_4X_HINT=0x00000020,
     FLAG_INTERLACED_HINT=0x00010000
 } ConfigFlags;
-enum { MOUSE_BUTTON_LEFT, MOUSE_BUTTON_RIGHT, MOUSE_BUTTON_MIDDLE };
 void SetConfigFlags(unsigned int flags);
 void InitWindow(int width,int height,const char *title);
 void RunMainLoop(void (*updateDraw)(void));
@@ -267,6 +297,17 @@ bool IsKeyReleased(int key);
 bool IsKeyUp(int key);
 int GetKeyPressed(void);
 int GetCharPressed(void);
+bool IsGamepadAvailable(int gamepad);
+const char *GetGamepadName(int gamepad);
+bool IsGamepadButtonPressed(int gamepad,int button);
+bool IsGamepadButtonDown(int gamepad,int button);
+bool IsGamepadButtonReleased(int gamepad,int button);
+bool IsGamepadButtonUp(int gamepad,int button);
+int GetGamepadButtonPressed(void);
+int GetGamepadAxisCount(int gamepad);
+float GetGamepadAxisMovement(int gamepad,int axis);
+int SetGamepadMappings(const char *mappings);
+void SetGamepadVibration(int gamepad,float leftMotor,float rightMotor,float duration);
 bool IsMouseButtonDown(int button);
 bool IsMouseButtonPressed(int button);
 bool IsMouseButtonReleased(int button);
@@ -280,6 +321,26 @@ Vector2 GetMouseWheelMoveV(void);
 void SetMousePosition(int x,int y);
 void SetMouseOffset(int offsetX,int offsetY);
 void SetMouseScale(float scaleX,float scaleY);
+void SetMouseCursor(int cursor);
+int GetTouchX(void);
+int GetTouchY(void);
+Vector2 GetTouchPosition(int index);
+int GetTouchPointId(int index);
+int GetTouchPointCount(void);
+void SetGesturesEnabled(unsigned int flags);
+bool IsGestureDetected(unsigned int gesture);
+int GetGestureDetected(void);
+float GetGestureHoldDuration(void);
+Vector2 GetGestureDragVector(void);
+float GetGestureDragAngle(void);
+Vector2 GetGesturePinchVector(void);
+float GetGesturePinchAngle(void);
+void ShowCursor(void);
+void HideCursor(void);
+bool IsCursorHidden(void);
+void EnableCursor(void);
+void DisableCursor(void);
+bool IsCursorOnScreen(void);
 void BeginDrawing(void);
 void ClearBackground(Color color);
 void EndDrawing(void);

@@ -100,6 +100,7 @@ void EndDrawing(void) {
 }
 void CloseWindow(void) {
     if (mr_audio_ready) CloseAudioDevice();
+    for(int gamepad=0;gamepad<MR_MAX_GAMEPADS;gamepad++)SetGamepadVibration(gamepad,0,0,0);
     mr_discard_readbacks();
     UnloadDroppedFiles(mr.droppedFiles);mr.droppedFiles=(FilePathList){0};MemFree(mr.clipboardText);mr.clipboardText=NULL;
     mr.ready=false; mr.drawing=false; mr.close=true;
@@ -124,6 +125,7 @@ void CloseWindow(void) {
     if (mr.adapter) wgpuAdapterRelease(mr.adapter);
     if (mr.instance) wgpuInstanceRelease(mr.instance);
 #ifdef _WIN32
+    ClipCursor(NULL);
     if (mr.window) DestroyWindow(mr.window);
     if(mr.bigIcon)DestroyIcon(mr.bigIcon);if(mr.smallIcon)DestroyIcon(mr.smallIcon);
     mr.bigIcon=mr.smallIcon=NULL;
@@ -151,6 +153,7 @@ void EndDrawing(void) {
 void CloseWindow(void) {
     if (!mr.ready) return;
     if (mr_audio_ready) CloseAudioDevice();
+    for(int gamepad=0;gamepad<MR_MAX_GAMEPADS;gamepad++)SetGamepadVibration(gamepad,0,0,0);
     mr_discard_readbacks();
     UnloadDroppedFiles(mr.droppedFiles);mr.droppedFiles=(FilePathList){0};MemFree(mr.clipboardText);mr.clipboardText=NULL;mr_web_drop_clear();
     mr.ready=false; mr.close=true; mr.drawing=false; mr.white=0;
@@ -169,6 +172,7 @@ MR_EXPORT("raygpu_focus") void raygpu_focus(int focused) {
 MR_EXPORT("raygpu_mouse") void raygpu_mouse(float x,float y,int button,int down) {
     mr_mouse(x,y); if (button>=0) mr_button(button,down!=0);
 }
+MR_EXPORT("raygpu_touch") void raygpu_touch(int id,int action,float x,float y) { mr_touch_event(id,action,x,y); }
 MR_EXPORT("raygpu_wheel") void raygpu_wheel(float x,float y) { mr.wheel.x+=x; mr.wheel.y+=y; }
 MR_EXPORT("raygpu_blur") void raygpu_blur(void) { mr_clear_input(); }
 MR_EXPORT("raygpu_frame") int raygpu_frame(void) {

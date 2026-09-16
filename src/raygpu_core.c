@@ -44,10 +44,89 @@ static void mr_key(int key,bool down) {
     mr.keys[key]=down;
 }
 static void mr_button(int button,bool down) {
-    if (button<0 || button>=3) return;
+    if (button<0 || button>=7) return;
     if (down && !mr.buttons[button]) mr.clicked[button]=true;
     if (!down && mr.buttons[button]) mr.buttonReleased[button]=true;
     mr.buttons[button]=down;
+}
+static float mr_distance(Vector2 a,Vector2 b) {
+    float x=b.x-a.x,y=b.y-a.y;return sqrtf(x*x+y*y);
+}
+static float mr_gesture_angle(Vector2 from,Vector2 to) {
+    float angle=atan2f(from.y-to.y,to.x-from.x)*(180.0f/MR_PI);
+    return angle<0?angle+360.0f:angle;
+}
+static int mr_touch_index(int id) {
+    for(int i=0;i<mr.touchCount;i++)if(mr.touches[i].id==id)return i;return -1;
+}
+static void mr_touch_event(int id,int action,float x,float y) {
+    Vector2 position={x,y};int index=mr_touch_index(id);double now=mr_clock();
+    if(action==0) {
+        if(index<0&&mr.touchCount<MR_MAX_TOUCH_POINTS){index=mr.touchCount++;mr.touches[index]=(MRTouchPoint){id,position};}
+        else if(index>=0)mr.touches[index].position=position;
+        if(mr.touchCount==1) {
+            bool doubleTap=mr.gestureLastTapTime>0&&now-mr.gestureLastTapTime<0.35&&mr_distance(position,mr.gestureLastTapPosition)<30.0f;
+            mr.gestureDetected=doubleTap?GESTURE_DOUBLETAP:GESTURE_TAP;
+            mr.gestureStart=position;mr.gestureDrag=(Vector2){0};mr.gestureStartTime=now;mr.gestureHoldStart=now;
+        } else if(mr.touchCount==2) {
+            Vector2 a=mr.touches[0].position,b=mr.touches[1].position;
+            mr.gesturePinch=(Vector2){b.x-a.x,b.y-a.y};mr.gesturePinchDistance=mr_distance(a,b);
+            mr.gesturePinchAngle=mr_gesture_angle(a,b);mr.gestureDetected=GESTURE_HOLD;mr.gestureHoldStart=now;
+        }
+        return;
+    }
+    if(index<0)return;
+    mr.touches[index].position=position;
+    if(action==1) {
+        if(mr.touchCount==1) {
+            mr.gestureDrag=(Vector2){position.x-mr.gestureStart.x,position.y-mr.gestureStart.y};
+            if(mr_distance(mr.gestureStart,position)>=6.0f)mr.gestureDetected=GESTURE_DRAG;
+        } else if(mr.touchCount>=2) {
+            Vector2 a=mr.touches[0].position,b=mr.touches[1].position;
+            float distance=mr_distance(a,b);
+            mr.gesturePinch=(Vector2){b.x-a.x,b.y-a.y};mr.gesturePinchAngle=mr_gesture_angle(a,b);
+            if(distance>mr.gesturePinchDistance+2.0f)mr.gestureDetected=GESTURE_PINCH_OUT;
+            else if(distance<mr.gesturePinchDistance-2.0f)mr.gestureDetected=GESTURE_PINCH_IN;
+            else mr.gestureDetected=GESTURE_HOLD;
+            mr.gesturePinchDistance=distance;
+        }
+        return;
+    }
+    if(mr.touchCount==1) {
+        float distance=mr_distance(mr.gestureStart,position);double elapsed=now-mr.gestureStartTime;
+        mr.gestureDrag=(Vector2){position.x-mr.gestureStart.x,position.y-mr.gestureStart.y};
+        mr.gestureDragAngle=mr_gesture_angle(mr.gestureStart,position);
+        if(distance>=50.0f&&elapsed<=0.75) {
+            if(mr.gestureDragAngle<45||mr.gestureDragAngle>=315)mr.gestureDetected=GESTURE_SWIPE_RIGHT;
+            else if(mr.gestureDragAngle<135)mr.gestureDetected=GESTURE_SWIPE_UP;
+            else if(mr.gestureDragAngle<225)mr.gestureDetected=GESTURE_SWIPE_LEFT;
+            else mr.gestureDetected=GESTURE_SWIPE_DOWN;
+        } else if(distance<10.0f&&elapsed<=0.35) {
+            bool doubleTap=mr.gestureLastTapTime>0&&now-mr.gestureLastTapTime<0.35&&mr_distance(position,mr.gestureLastTapPosition)<30.0f;
+            mr.gestureDetected=doubleTap?GESTURE_DOUBLETAP:GESTURE_TAP;
+            mr.gestureLastTapTime=now;mr.gestureLastTapPosition=position;
+        }
+    }
+    for(int i=index+1;i<mr.touchCount;i++)mr.touches[i-1]=mr.touches[i];
+    mr.touchCount--;
+    if(mr.touchCount==1){mr.gestureStart=mr.touches[0].position;mr.gestureStartTime=now;mr.gestureHoldStart=now;mr.gestureDrag=(Vector2){0};}
+    else if(mr.touchCount==0){mr.gesturePinch=(Vector2){0};mr.gesturePinchDistance=0;}
+}
+static void mr_update_gestures(void) {
+    if(mr.touchCount==1){float distance=mr_distance(mr.gestureStart,mr.touches[0].position);if(distance>=6.0f)mr.gestureDetected=GESTURE_DRAG;else if(mr_clock()-mr.gestureStartTime>=0.5)mr.gestureDetected=GESTURE_HOLD;}
+}
+static void mr_gamepad_state(int gamepad,bool available,const char *name,const bool *buttons,const float *axes) {
+    if(gamepad<0||gamepad>=MR_MAX_GAMEPADS)return;MRGamepadState *state=&mr.gamepads[gamepad];
+    for(int button=1;button<MR_GAMEPAD_BUTTONS;button++){
+        bool down=available&&buttons&&buttons[button];
+        if(down&&!state->buttons[button]){state->pressed[button]=true;mr.gamepadLastButton=button;}
+        if(!down&&state->buttons[button])state->released[button]=true;
+        state->buttons[button]=down;
+    }
+    state->available=available;
+    if(available&&axes)memcpy(state->axes,axes,sizeof state->axes);else memset(state->axes,0,sizeof state->axes);
+    if(available&&name){size_t length=0;while(name[length]&&length+1<sizeof state->name)length++;memcpy(state->name,name,length);state->name[length]=0;}
+    else state->name[0]=0;
 }
 static void mr_mouse(float x,float y) {
     x=x*mr.mouseScale.x+mr.mouseOffset.x; y=y*mr.mouseScale.y+mr.mouseOffset.y;
@@ -59,6 +138,7 @@ static void mr_clear_input(void) {
     memset(mr.repeated,0,sizeof mr.repeated); memset(mr.released,0,sizeof mr.released);
     memset(mr.buttons,0,sizeof mr.buttons); memset(mr.clicked,0,sizeof mr.clicked);
     memset(mr.buttonReleased,0,sizeof mr.buttonReleased);
+    mr.touchCount=0;mr.gestureDetected=GESTURE_NONE;
     mr.mouseDelta=(Vector2){0}; mr.wheel=(Vector2){0};
     mr.keyQueueCount=0; mr.charQueueCount=0;
 }
@@ -66,6 +146,8 @@ static void mr_finish_input_frame(void) {
     memset(mr.pressed,0,sizeof mr.pressed); memset(mr.repeated,0,sizeof mr.repeated);
     memset(mr.released,0,sizeof mr.released); memset(mr.clicked,0,sizeof mr.clicked);
     memset(mr.buttonReleased,0,sizeof mr.buttonReleased);
+    for(int gamepad=0;gamepad<MR_MAX_GAMEPADS;gamepad++){memset(mr.gamepads[gamepad].pressed,0,sizeof mr.gamepads[gamepad].pressed);memset(mr.gamepads[gamepad].released,0,sizeof mr.gamepads[gamepad].released);}
+    mr.gamepadLastButton=GAMEPAD_BUTTON_UNKNOWN;if(mr.touchCount==0)mr.gestureDetected=GESTURE_NONE;
     mr.mouseDelta=(Vector2){0}; mr.wheel=(Vector2){0};
     mr.keyQueueCount=0; mr.charQueueCount=0; mr.resized=false;
 }
@@ -132,6 +214,54 @@ static DWORD mr_window_style(unsigned int flags) {
     if(flags&FLAG_WINDOW_RESIZABLE)style|=WS_THICKFRAME|WS_MAXIMIZEBOX;
     return style;
 }
+typedef DWORD (WINAPI *MRXInputGetState)(DWORD,XINPUT_STATE *);
+typedef DWORD (WINAPI *MRXInputSetState)(DWORD,XINPUT_VIBRATION *);
+static HMODULE mr_xinput_module;
+static MRXInputGetState mr_xinput_get_state;
+static MRXInputSetState mr_xinput_set_state;
+static void mr_xinput_init(void) {
+    if(mr_xinput_module)return;
+    const char *libraries[]={"xinput1_4.dll","xinput1_3.dll","xinput9_1_0.dll"};
+    for(int i=0;i<3&&!mr_xinput_module;i++)mr_xinput_module=LoadLibraryA(libraries[i]);
+    if(mr_xinput_module){mr_xinput_get_state=(MRXInputGetState)(void *)GetProcAddress(mr_xinput_module,"XInputGetState");mr_xinput_set_state=(MRXInputSetState)(void *)GetProcAddress(mr_xinput_module,"XInputSetState");}
+}
+static float mr_xinput_stick(SHORT value) { return value<0?(float)value/32768.0f:(float)value/32767.0f; }
+static void mr_poll_gamepads(void) {
+    mr_xinput_init();
+    for(int gamepad=0;gamepad<MR_MAX_GAMEPADS;gamepad++) {
+        XINPUT_STATE input={0};bool down[MR_GAMEPAD_BUTTONS]={0};float axes[MR_GAMEPAD_AXES]={0};char name[32];
+        bool available=mr_xinput_get_state&&mr_xinput_get_state((DWORD)gamepad,&input)==ERROR_SUCCESS;
+        if(available) {
+            WORD b=input.Gamepad.wButtons;
+            down[GAMEPAD_BUTTON_LEFT_FACE_UP]=(b&XINPUT_GAMEPAD_DPAD_UP)!=0;down[GAMEPAD_BUTTON_LEFT_FACE_RIGHT]=(b&XINPUT_GAMEPAD_DPAD_RIGHT)!=0;
+            down[GAMEPAD_BUTTON_LEFT_FACE_DOWN]=(b&XINPUT_GAMEPAD_DPAD_DOWN)!=0;down[GAMEPAD_BUTTON_LEFT_FACE_LEFT]=(b&XINPUT_GAMEPAD_DPAD_LEFT)!=0;
+            down[GAMEPAD_BUTTON_RIGHT_FACE_UP]=(b&XINPUT_GAMEPAD_Y)!=0;down[GAMEPAD_BUTTON_RIGHT_FACE_RIGHT]=(b&XINPUT_GAMEPAD_B)!=0;
+            down[GAMEPAD_BUTTON_RIGHT_FACE_DOWN]=(b&XINPUT_GAMEPAD_A)!=0;down[GAMEPAD_BUTTON_RIGHT_FACE_LEFT]=(b&XINPUT_GAMEPAD_X)!=0;
+            down[GAMEPAD_BUTTON_LEFT_TRIGGER_1]=(b&XINPUT_GAMEPAD_LEFT_SHOULDER)!=0;down[GAMEPAD_BUTTON_RIGHT_TRIGGER_1]=(b&XINPUT_GAMEPAD_RIGHT_SHOULDER)!=0;
+            down[GAMEPAD_BUTTON_LEFT_TRIGGER_2]=input.Gamepad.bLeftTrigger>XINPUT_GAMEPAD_TRIGGER_THRESHOLD;
+            down[GAMEPAD_BUTTON_RIGHT_TRIGGER_2]=input.Gamepad.bRightTrigger>XINPUT_GAMEPAD_TRIGGER_THRESHOLD;
+            down[GAMEPAD_BUTTON_MIDDLE_LEFT]=(b&XINPUT_GAMEPAD_BACK)!=0;down[GAMEPAD_BUTTON_MIDDLE_RIGHT]=(b&XINPUT_GAMEPAD_START)!=0;
+            down[GAMEPAD_BUTTON_LEFT_THUMB]=(b&XINPUT_GAMEPAD_LEFT_THUMB)!=0;down[GAMEPAD_BUTTON_RIGHT_THUMB]=(b&XINPUT_GAMEPAD_RIGHT_THUMB)!=0;
+            axes[GAMEPAD_AXIS_LEFT_X]=mr_xinput_stick(input.Gamepad.sThumbLX);axes[GAMEPAD_AXIS_LEFT_Y]=-mr_xinput_stick(input.Gamepad.sThumbLY);
+            axes[GAMEPAD_AXIS_RIGHT_X]=mr_xinput_stick(input.Gamepad.sThumbRX);axes[GAMEPAD_AXIS_RIGHT_Y]=-mr_xinput_stick(input.Gamepad.sThumbRY);
+            axes[GAMEPAD_AXIS_LEFT_TRIGGER]=(float)input.Gamepad.bLeftTrigger/127.5f-1.0f;axes[GAMEPAD_AXIS_RIGHT_TRIGGER]=(float)input.Gamepad.bRightTrigger/127.5f-1.0f;
+            snprintf(name,sizeof name,"XInput Gamepad %d",gamepad+1);
+        }
+        mr_gamepad_state(gamepad,available,name,down,axes);
+        if(mr.gamepads[gamepad].vibrationEnd>0&&mr_clock()>=mr.gamepads[gamepad].vibrationEnd){XINPUT_VIBRATION vibration={0};if(mr_xinput_set_state)mr_xinput_set_state((DWORD)gamepad,&vibration);mr.gamepads[gamepad].vibrationEnd=0;}
+    }
+}
+static HCURSOR mr_cursor_handle(int cursor) {
+    const char *id=IDC_ARROW;
+    switch(cursor){case MOUSE_CURSOR_IBEAM:id=IDC_IBEAM;break;case MOUSE_CURSOR_CROSSHAIR:id=IDC_CROSS;break;case MOUSE_CURSOR_POINTING_HAND:id=IDC_HAND;break;case MOUSE_CURSOR_RESIZE_EW:id=IDC_SIZEWE;break;case MOUSE_CURSOR_RESIZE_NS:id=IDC_SIZENS;break;case MOUSE_CURSOR_RESIZE_NWSE:id=IDC_SIZENWSE;break;case MOUSE_CURSOR_RESIZE_NESW:id=IDC_SIZENESW;break;case MOUSE_CURSOR_RESIZE_ALL:id=IDC_SIZEALL;break;case MOUSE_CURSOR_NOT_ALLOWED:id=IDC_NO;break;default:break;}
+    return LoadCursorA(NULL,id);
+}
+static void mr_apply_cursor(void) { SetCursor((mr.cursorHidden||mr.cursorDisabled)?NULL:mr_cursor_handle(mr.cursorShape)); }
+static void mr_apply_cursor_clip(void) {
+    if(!mr.cursorDisabled||!mr.window||!mr.focused){ClipCursor(NULL);return;}
+    RECT area;if(GetClientRect(mr.window,&area)){POINT a={area.left,area.top},b={area.right,area.bottom};ClientToScreen(mr.window,&a);ClientToScreen(mr.window,&b);area=(RECT){a.x,a.y,b.x,b.y};ClipCursor(&area);}
+}
+static bool mr_mouse_message_is_touch(void) { return ((unsigned long)GetMessageExtraInfo()&0xffffff00u)==0xff515700u; }
 static void mr_release_path_list(FilePathList files) {
     if(files.paths){for(unsigned int i=0;i<files.count;i++)MemFree(files.paths[i]);MemFree(files.paths);}
 }
@@ -164,9 +294,11 @@ static void mr_set_fullscreen_mode(bool fullscreen,bool borderless) {
 static LRESULT CALLBACK mr_window_proc(HWND window,UINT message,WPARAM w,LPARAM l) {
     switch(message) {
     case WM_CLOSE: mr.close=true; return 0;
-    case WM_SIZE: mr.width=LOWORD(l); mr.height=HIWORD(l); mr.resized=true; return 0;
-    case WM_SETFOCUS: mr.focused=true; return 0;
-    case WM_KILLFOCUS: mr.focused=false; mr_clear_input(); return 0;
+    case WM_SIZE: mr.width=LOWORD(l); mr.height=HIWORD(l); mr.resized=true;if(mr.cursorDisabled)mr_apply_cursor_clip();return 0;
+    case WM_SETFOCUS: mr.focused=true; mr_apply_cursor_clip(); return 0;
+    case WM_KILLFOCUS: mr.focused=false; ClipCursor(NULL); mr_clear_input(); return 0;
+    case WM_SETCURSOR: if(LOWORD(l)==HTCLIENT){mr_apply_cursor();return TRUE;}break;
+    case WM_MOUSELEAVE: mr.cursorOnScreen=false;mr.mouseTracking=false;return 0;
     case WM_CHAR:
         if ((unsigned int)w>=32 && mr.charQueueCount<16) mr.charQueue[mr.charQueueCount++]=(int)w;
         return 0;
@@ -182,15 +314,33 @@ static LRESULT CALLBACK mr_window_proc(HWND window,UINT message,WPARAM w,LPARAM 
         int key=mr_translate_key(w,l);
         mr_key(key,message==WM_KEYDOWN || message==WM_SYSKEYDOWN); return 0;
     }
-    case WM_MOUSEMOVE: mr_mouse((float)GET_X_LPARAM(l),(float)GET_Y_LPARAM(l)); return 0;
+    case WM_MOUSEMOVE: {
+        int x=GET_X_LPARAM(l),y=GET_Y_LPARAM(l);
+        if(mr.cursorDisabled&&mr.focused){int centerX=mr.width/2,centerY=mr.height/2;mr.mouseDelta.x+=(float)(x-centerX);mr.mouseDelta.y+=(float)(y-centerY);mr.mouse=(Vector2){(float)centerX,(float)centerY};if(x!=centerX||y!=centerY){POINT center={centerX,centerY};ClientToScreen(window,&center);SetCursorPos(center.x,center.y);}}
+        else mr_mouse((float)x,(float)y);
+        mr.cursorOnScreen=true;
+        if(!mr.mouseTracking){TRACKMOUSEEVENT tracking={sizeof tracking,TME_LEAVE,window,0};TrackMouseEvent(&tracking);mr.mouseTracking=true;}
+        if(mr.buttons[MOUSE_BUTTON_LEFT]&&!mr_mouse_message_is_touch())mr_touch_event(-1,1,(float)x,(float)y);
+        return 0;
+    }
     case WM_MOUSEWHEEL: mr.wheel.y+=(float)GET_WHEEL_DELTA_WPARAM(w)/(float)WHEEL_DELTA; return 0;
     case WM_MOUSEHWHEEL: mr.wheel.x+=(float)GET_WHEEL_DELTA_WPARAM(w)/(float)WHEEL_DELTA; return 0;
-    case WM_LBUTTONDOWN: mr_button(0,true); SetCapture(window); return 0;
+    case WM_LBUTTONDOWN: mr_button(0,true);if(!mr_mouse_message_is_touch())mr_touch_event(-1,0,(float)GET_X_LPARAM(l),(float)GET_Y_LPARAM(l));SetCapture(window); return 0;
     case WM_RBUTTONDOWN: mr_button(1,true); SetCapture(window); return 0;
     case WM_MBUTTONDOWN: mr_button(2,true); SetCapture(window); return 0;
-    case WM_LBUTTONUP: mr_button(0,false); if (!mr.buttons[1] && !mr.buttons[2]) ReleaseCapture(); return 0;
+    case WM_LBUTTONUP: if(!mr_mouse_message_is_touch())mr_touch_event(-1,2,(float)GET_X_LPARAM(l),(float)GET_Y_LPARAM(l));mr_button(0,false); if (!mr.buttons[1] && !mr.buttons[2]) ReleaseCapture(); return 0;
     case WM_RBUTTONUP: mr_button(1,false); if (!mr.buttons[0] && !mr.buttons[2]) ReleaseCapture(); return 0;
     case WM_MBUTTONUP: mr_button(2,false); if (!mr.buttons[0] && !mr.buttons[1]) ReleaseCapture(); return 0;
+    case WM_XBUTTONDOWN: {int button=GET_XBUTTON_WPARAM(w)==XBUTTON1?MOUSE_BUTTON_SIDE:MOUSE_BUTTON_EXTRA;mr_button(button,true);SetCapture(window);return TRUE;}
+    case WM_XBUTTONUP: {int button=GET_XBUTTON_WPARAM(w)==XBUTTON1?MOUSE_BUTTON_SIDE:MOUSE_BUTTON_EXTRA;mr_button(button,false);if(!mr.buttons[0]&&!mr.buttons[1]&&!mr.buttons[2]&&!mr.buttons[3]&&!mr.buttons[4])ReleaseCapture();return TRUE;}
+    case WM_POINTERDOWN: case WM_POINTERUPDATE: case WM_POINTERUP: {
+        POINTER_INFO info;if(GetPointerInfo(GET_POINTERID_WPARAM(w),&info)&&(info.pointerType==PT_TOUCH||info.pointerType==PT_PEN)){
+            POINT point=info.ptPixelLocation;ScreenToClient(window,&point);
+            int action=message==WM_POINTERDOWN?0:(message==WM_POINTERUP?2:1);
+            mr_touch_event((int)info.pointerId,action,(float)point.x,(float)point.y);return 0;
+        }
+        break;
+    }
     case WM_CAPTURECHANGED: memset(mr.buttons,0,sizeof mr.buttons); return 0;
     case WM_DROPFILES: {
         HDROP drop=(HDROP)w;UINT count=DragQueryFileW(drop,0xffffffffu,NULL,0);
@@ -207,6 +357,7 @@ static void mr_pump(void) {
         if (message.message==WM_QUIT) mr.close=true;
         TranslateMessage(&message); DispatchMessageA(&message);
     }
+    mr_poll_gamepads();mr_update_gestures();
     if (mr.instance) wgpuInstanceProcessEvents(mr.instance);
 }
 static void mr_adapter(WGPURequestAdapterStatus status,WGPUAdapter adapter,WGPUStringView message,void *a,void *b) {
@@ -231,7 +382,14 @@ static void mr_device_lost(WGPUDevice const *device,WGPUDeviceLostReason reason,
     mr_message("device lost",message); mr.error=true; mr.close=true;
 }
 #else
-static void mr_pump(void) {}
+static void mr_poll_gamepads(void) {
+    for(int gamepad=0;gamepad<MR_MAX_GAMEPADS;gamepad++){
+        bool down[MR_GAMEPAD_BUTTONS]={0};float axes[MR_GAMEPAD_AXES]={0};char name[128]={0};bool available=mr_web_gamepad_available(gamepad)!=0;
+        if(available){mr_web_gamepad_name(gamepad,name,sizeof name);for(int button=1;button<MR_GAMEPAD_BUTTONS;button++)down[button]=mr_web_gamepad_button(gamepad,button)!=0;for(int axis=0;axis<MR_GAMEPAD_AXES;axis++)axes[axis]=mr_web_gamepad_axis(gamepad,axis);}
+        mr_gamepad_state(gamepad,available,name,down,axes);
+    }
+}
+static void mr_pump(void) { mr_poll_gamepads();mr_update_gestures(); }
 #endif
 static MRTexture *mr_texture(unsigned int id) {
     if (!id) return NULL;
@@ -562,7 +720,7 @@ static bool mr_resize_depth(int width,int height) {
 }
 void InitWindow(int width,int height,const char *title) {
     if (mr.instance) { fprintf(stderr,"raygpu: only one window is supported\n"); return; }
-    memset(&mr,0,sizeof mr); mr.flags=mr_config_flags; mr.fps=60; mr.dt=1.0f/60; mr.clear=BLACK; mr.exitKey=KEY_ESCAPE; mr.focused=true; mr.mouseScale=(Vector2){1,1};
+    memset(&mr,0,sizeof mr); mr.flags=mr_config_flags; mr.fps=60; mr.dt=1.0f/60; mr.clear=BLACK; mr.exitKey=KEY_ESCAPE; mr.focused=true; mr.mouseScale=(Vector2){1,1};mr.gesturesEnabled=0x3ffu;
     mr.start=mr.previous=mr_clock();
     if (width<=0 || height<=0 || width>8192 || height>8192) { mr_error("Invalid window size"); return; }
     mr.width=width; mr.height=height;
@@ -625,7 +783,7 @@ void InitWindow(int width,int height,const char *title) {
 #else
 void InitWindow(int width,int height,const char *title) {
     if (mr.ready) return;
-    memset(&mr,0,sizeof mr); mr.flags=mr_config_flags; mr.fps=60; mr.dt=1.0f/60; mr.clear=BLACK; mr.exitKey=KEY_ESCAPE; mr.focused=true; mr.mouseScale=(Vector2){1,1};
+    memset(&mr,0,sizeof mr); mr.flags=mr_config_flags; mr.fps=60; mr.dt=1.0f/60; mr.clear=BLACK; mr.exitKey=KEY_ESCAPE; mr.focused=true; mr.mouseScale=(Vector2){1,1};mr.gesturesEnabled=0x3ffu;
     if (width<=0 || height<=0 || width>8192 || height>8192) { mr_error("Invalid window size"); return; }
     mr.width=width; mr.height=height; mr.start=mr.previous=mr_clock();
     mr_web_init(width,height,title); mr_web_window_command(7,(int)mr.flags,0,NULL); mr.ready=true;
@@ -1201,9 +1359,28 @@ int GetCharPressed(void) {
     for (int i=1;i<mr.charQueueCount;i++) mr.charQueue[i-1]=mr.charQueue[i];
     mr.charQueueCount--; return codepoint;
 }
-bool IsMouseButtonDown(int b) { return b>=0 && b<3 && mr.buttons[b]; }
-bool IsMouseButtonPressed(int b) { return b>=0 && b<3 && mr.clicked[b]; }
-bool IsMouseButtonReleased(int b) { return b>=0 && b<3 && mr.buttonReleased[b]; }
+bool IsGamepadAvailable(int gamepad) { return gamepad>=0&&gamepad<MR_MAX_GAMEPADS&&mr.gamepads[gamepad].available; }
+const char *GetGamepadName(int gamepad) { return IsGamepadAvailable(gamepad)?mr.gamepads[gamepad].name:NULL; }
+bool IsGamepadButtonPressed(int gamepad,int button) { return IsGamepadAvailable(gamepad)&&button>0&&button<MR_GAMEPAD_BUTTONS&&mr.gamepads[gamepad].pressed[button]; }
+bool IsGamepadButtonDown(int gamepad,int button) { return IsGamepadAvailable(gamepad)&&button>0&&button<MR_GAMEPAD_BUTTONS&&mr.gamepads[gamepad].buttons[button]; }
+bool IsGamepadButtonReleased(int gamepad,int button) { return gamepad>=0&&gamepad<MR_MAX_GAMEPADS&&button>0&&button<MR_GAMEPAD_BUTTONS&&mr.gamepads[gamepad].released[button]; }
+bool IsGamepadButtonUp(int gamepad,int button) { return !IsGamepadButtonDown(gamepad,button); }
+int GetGamepadButtonPressed(void) { int button=mr.gamepadLastButton;mr.gamepadLastButton=GAMEPAD_BUTTON_UNKNOWN;return button; }
+int GetGamepadAxisCount(int gamepad) { return IsGamepadAvailable(gamepad)?MR_GAMEPAD_AXES:0; }
+float GetGamepadAxisMovement(int gamepad,int axis) { return IsGamepadAvailable(gamepad)&&axis>=0&&axis<MR_GAMEPAD_AXES?mr.gamepads[gamepad].axes[axis]:0.0f; }
+int SetGamepadMappings(const char *mappings) { (void)mappings;return 0; }
+void SetGamepadVibration(int gamepad,float leftMotor,float rightMotor,float duration) {
+    if(gamepad<0||gamepad>=MR_MAX_GAMEPADS)return;leftMotor=mr_clamp01(leftMotor);rightMotor=mr_clamp01(rightMotor);if(duration<=0){duration=0;leftMotor=rightMotor=0;}
+#ifdef _WIN32
+    mr_xinput_init();if(!mr_xinput_set_state)return;XINPUT_VIBRATION vibration={(WORD)(leftMotor*65535.0f+0.5f),(WORD)(rightMotor*65535.0f+0.5f)};
+    mr_xinput_set_state((DWORD)gamepad,&vibration);mr.gamepads[gamepad].vibrationEnd=(leftMotor>0||rightMotor>0)&&duration>0?mr_clock()+duration:0;
+#else
+    mr_web_gamepad_vibrate(gamepad,leftMotor,rightMotor,(int)(duration*1000.0f+0.5f));
+#endif
+}
+bool IsMouseButtonDown(int b) { return b>=0 && b<7 && mr.buttons[b]; }
+bool IsMouseButtonPressed(int b) { return b>=0 && b<7 && mr.clicked[b]; }
+bool IsMouseButtonReleased(int b) { return b>=0 && b<7 && mr.buttonReleased[b]; }
 bool IsMouseButtonUp(int b) { return !IsMouseButtonDown(b); }
 int GetMouseX(void) { return (int)mr.mouse.x; }
 int GetMouseY(void) { return (int)mr.mouse.y; }
@@ -1227,6 +1404,63 @@ void SetMousePosition(int x,int y) {
 }
 void SetMouseOffset(int x,int y) { mr.mouseOffset=(Vector2){(float)x,(float)y}; }
 void SetMouseScale(float x,float y) { mr.mouseScale=(Vector2){x,y}; }
+void SetMouseCursor(int cursor) {
+    if(cursor<MOUSE_CURSOR_DEFAULT||cursor>MOUSE_CURSOR_NOT_ALLOWED)return;mr.cursorShape=cursor;
+#ifdef _WIN32
+    mr_apply_cursor();
+#else
+    mr_web_window_command(8,cursor,0,NULL);
+#endif
+}
+int GetTouchX(void) { return (int)GetTouchPosition(0).x; }
+int GetTouchY(void) { return (int)GetTouchPosition(0).y; }
+Vector2 GetTouchPosition(int index) { return index>=0&&index<mr.touchCount?mr.touches[index].position:(Vector2){-1,-1}; }
+int GetTouchPointId(int index) { return index>=0&&index<mr.touchCount?mr.touches[index].id:-1; }
+int GetTouchPointCount(void) { return mr.touchCount; }
+void SetGesturesEnabled(unsigned int flags) { mr.gesturesEnabled=flags; }
+bool IsGestureDetected(unsigned int gesture) { return gesture!=GESTURE_NONE&&(mr.gestureDetected&mr.gesturesEnabled&gesture)==gesture; }
+int GetGestureDetected(void) { return (int)(mr.gestureDetected&mr.gesturesEnabled); }
+float GetGestureHoldDuration(void) { return mr.touchCount>0&&mr.gestureDetected==GESTURE_HOLD?(float)(mr_clock()-mr.gestureHoldStart):0.0f; }
+Vector2 GetGestureDragVector(void) { return mr.gestureDrag; }
+float GetGestureDragAngle(void) { return mr.gestureDragAngle; }
+Vector2 GetGesturePinchVector(void) { return mr.gesturePinch; }
+float GetGesturePinchAngle(void) { return mr.gesturePinchAngle; }
+void ShowCursor(void) { mr.cursorHidden=false;
+#ifdef _WIN32
+    mr_apply_cursor();
+#else
+    mr_web_window_command(9,0,0,NULL);
+#endif
+}
+void HideCursor(void) { mr.cursorHidden=true;
+#ifdef _WIN32
+    mr_apply_cursor();
+#else
+    mr_web_window_command(9,1,0,NULL);
+#endif
+}
+bool IsCursorHidden(void) { return mr.cursorHidden||mr.cursorDisabled; }
+void EnableCursor(void) { mr.cursorDisabled=false;
+#ifdef _WIN32
+    ClipCursor(NULL);if(!mr.buttons[0]&&!mr.buttons[1]&&!mr.buttons[2])ReleaseCapture();mr_apply_cursor();
+#else
+    mr_web_window_command(10,0,0,NULL);
+#endif
+}
+void DisableCursor(void) { mr.cursorDisabled=true;
+#ifdef _WIN32
+    if(mr.window){SetCapture(mr.window);POINT center={mr.width/2,mr.height/2};mr.mouse=(Vector2){(float)center.x,(float)center.y};ClientToScreen(mr.window,&center);SetCursorPos(center.x,center.y);}mr_apply_cursor_clip();mr_apply_cursor();
+#else
+    mr_web_window_command(10,1,0,NULL);
+#endif
+}
+bool IsCursorOnScreen(void) {
+#ifdef _WIN32
+    return mr.cursorOnScreen;
+#else
+    return mr_web_window_query(11,0)!=0;
+#endif
+}
 void BeginDrawing(void) { mr_dispatch_readbacks();mr.vertexCount=mr.batchCount=mr.drawCount3d=mr.instanceCount3d=0; mr.overflow=false; mr.renderTarget=0; mr.targetWidth=mr.width; mr.targetHeight=mr.height; mr.drawing=mr.ready; }
 void ClearBackground(Color color) { mr.clear=color; mr.vertexCount=mr.batchCount=mr.drawCount3d=mr.instanceCount3d=0; }
 void BeginBlendMode(int mode) { mr.blendMode=(mode>=0 && mode<6)?mode:BLEND_ALPHA; }

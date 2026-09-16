@@ -221,7 +221,13 @@ to RayGPU file-loading functions.
   monitor queries and selection, window icons and opacity, clipboard text,
   dropped files, and native minimize/maximize/restore.
 - Complete raylib keyboard constants; press, repeat, release, Unicode character
-  queues, mouse buttons, position, delta, wheel, offset, and scaling.
+  queues, mouse buttons, position, delta, wheel, offset, scaling, cursor shapes,
+  cursor visibility, and cursor locking.
+- Four gamepad slots with raylib's standard button/axis layout, connection and
+  name queries, per-frame button transitions, dual-motor timed vibration,
+  up to ten simultaneous touch points, and tap, double-tap, hold, drag, swipe,
+  and pinch gestures. Windows uses the system XInput DLL dynamically; browsers
+  use the Gamepad, Pointer Events, Pointer Lock, and haptics APIs.
 - Complete raylib 2D shapes, gradients, polygons, splines, 2D collisions, 2D
   cameras, and screen/world conversion.
 - Perspective and orthographic 3D cameras, depth buffering, screen/world rays,
@@ -414,7 +420,6 @@ complete binding contract.
 
 ## Remaining core, 2D, and audio work
 
-- Gamepads, vibration, touch input, gestures, and cursor management.
 - Directory listing, URL opening, compression, logging callbacks, and
   automation events.
 
@@ -429,6 +434,10 @@ complete binding contract.
 ## Current limits
 
 - Native rendering currently supports Windows through Dawn/D3D12.
+- Native gamepads currently use XInput's standard four-controller layout.
+  Browser gamepad vibration depends on the controller and browser exposing a
+  haptics actuator. `SetGamepadMappings()` returns zero because XInput and the
+  browser standard mapping do not accept SDL controller-database mappings.
 - VOX loading uses voxel volumes and their palettes; scene-node transforms and
   animation are ignored, as in raylib's VOX loader. IQM/M3D skinning supports up
   to four influences per vertex and bone IDs that fit in one byte.

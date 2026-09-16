@@ -13,6 +13,7 @@
     let depthTexture, depthWidth=0, depthHeight=0;
     const sounds = new Map();
     let stopped = false, targetFPS = 60, lastFrame, fullscreenPending = 0, fullscreenMode = 0;
+    let cursorOnCanvas = false, cursorHidden = false, cursorDisabled = false, cursorShape = 0, pointerLockPending = false, mouseX = 0, mouseY = 0;
     let displayWidth = 0, displayHeight = 0, displayDpr = 0, displayViewportWidth = 0, displayViewportHeight = 0;
     function updateCanvasDisplay(force = false) {
         const dpr = Math.max(window.devicePixelRatio || 1, 0.01);
@@ -32,6 +33,14 @@
         if (!fullscreenPending || document.fullscreenElement || !canvas.requestFullscreen) return;
         const mode = fullscreenPending; fullscreenPending = 0; fullscreenMode = mode;
         canvas.requestFullscreen().catch(() => { fullscreenPending = mode; fullscreenMode = 0; });
+    }
+    const cursorNames = ["default","default","text","crosshair","pointer","ew-resize","ns-resize","nwse-resize","nesw-resize","move","not-allowed"];
+    function applyCursor() { canvas.style.cursor = cursorHidden || cursorDisabled || document.pointerLockElement === canvas ? "none" : (cursorNames[cursorShape] || "default"); }
+    function retryPointerLock() {
+        if (!pointerLockPending || document.pointerLockElement === canvas || !canvas.requestPointerLock) return;
+        pointerLockPending = false;
+        try { const result = canvas.requestPointerLock();if (result && result.catch) result.catch(() => { pointerLockPending = true; }); }
+        catch (_) { pointerLockPending = true; }
     }
     function close() {
         if (stopped) return;
@@ -200,6 +209,7 @@
             now: () => performance.now(),
             sin: Math.sin, cos: Math.cos, math_pow: Math.pow, math_log: Math.log,
             math_exp: Math.exp, math_floor: Math.floor, math_ldexp: (value, exponent) => value*Math.pow(2, exponent),
+            math_atan2: Math.atan2,
             fps: fps => { targetFPS = fps; },
             window_query: (command, index) => {
                 if (index !== 0 && command >= 3 && command <= 9) return 0;
@@ -214,6 +224,7 @@
                 if (command === 7 || command === 8) return 0;
                 if (command === 9) return Math.round(Number(screen.refreshRate) || 60);
                 if (command === 10) return Math.round(dpr*1000);
+                if (command === 11) return cursorOnCanvas ? 1 : 0;
                 return 0;
             },
             window_text: (command, index, pointer, size) => command === 0 && index === 0 ? writeText("Browser display", pointer, size) : 0,
@@ -226,6 +237,30 @@
                 let link = document.querySelector('link[rel~="icon"]');
                 if (!link) { link = document.createElement("link"); link.rel = "icon"; document.head.appendChild(link); }
                 link.href = iconCanvas.toDataURL("image/png");
+            },
+            gamepad_available: gamepad => {
+                const pads=navigator.getGamepads?navigator.getGamepads():[];return gamepad>=0&&gamepad<pads.length&&pads[gamepad]&&pads[gamepad].connected?1:0;
+            },
+            gamepad_name: (gamepad, pointer, size) => {
+                const pads=navigator.getGamepads?navigator.getGamepads():[],pad=gamepad>=0&&gamepad<pads.length?pads[gamepad]:null;
+                return pad&&pad.connected?writeText(pad.id||`Gamepad ${gamepad+1}`,pointer,size):0;
+            },
+            gamepad_button: (gamepad, button) => {
+                const pads=navigator.getGamepads?navigator.getGamepads():[],pad=gamepad>=0&&gamepad<pads.length?pads[gamepad]:null;
+                const map=[-1,12,15,13,14,3,1,0,2,4,6,5,7,8,16,9,10,11],index=button>=0&&button<map.length?map[button]:-1;
+                return pad&&pad.connected&&index>=0&&index<pad.buttons.length&&pad.buttons[index].pressed?1:0;
+            },
+            gamepad_axis: (gamepad, axis) => {
+                const pads=navigator.getGamepads?navigator.getGamepads():[],pad=gamepad>=0&&gamepad<pads.length?pads[gamepad]:null;
+                if(!pad||!pad.connected)return 0;if(axis>=0&&axis<4)return pad.axes[axis]||0;
+                if(axis===4||axis===5){const button=pad.buttons[axis===4?6:7];return button?button.value*2-1:-1;}return 0;
+            },
+            gamepad_vibrate: (gamepad, left, right, milliseconds) => {
+                const pads=navigator.getGamepads?navigator.getGamepads():[],pad=gamepad>=0&&gamepad<pads.length?pads[gamepad]:null;if(!pad)return;
+                const actuator=pad.vibrationActuator||(pad.hapticActuators&&pad.hapticActuators[0]);if(!actuator)return;
+                if(milliseconds<=0&&actuator.reset){actuator.reset().catch(()=>{});return;}
+                if(actuator.playEffect)actuator.playEffect("dual-rumble",{duration:Math.max(0,milliseconds),strongMagnitude:Math.max(0,Math.min(1,left)),weakMagnitude:Math.max(0,Math.min(1,right))}).catch(()=>{});
+                else if(actuator.pulse)actuator.pulse(Math.max(left,right),Math.max(0,milliseconds)).catch(()=>{});
             },
             clipboard_set: pointer => {
                 clipboardText = readText(pointer);
@@ -334,6 +369,7 @@
             },
             init: (width, height, title) => {
                 canvas.width = width; canvas.height = height;
+                canvas.style.touchAction = "none";
                 updateCanvasDisplay(true);
                 document.title = readText(title);
                 context.configure({device, format, alphaMode: "opaque"});
@@ -361,6 +397,14 @@
                         fullscreenMode = mode;
                         canvas.requestFullscreen().catch(() => { fullscreenPending = mode; fullscreenMode = 0; });
                     }
+                }
+                else if (command === 8) { cursorShape = Math.max(0, Math.min(10, a)); applyCursor(); }
+                else if (command === 9) { cursorHidden = a !== 0; applyCursor(); }
+                else if (command === 10) {
+                    cursorDisabled = a !== 0;
+                    if (a) { pointerLockPending = true; retryPointerLock(); }
+                    else { pointerLockPending = false; if (document.pointerLockElement === canvas && document.exitPointerLock) document.exitPointerLock(); }
+                    applyCursor();
                 }
             },
             texture: (id, pointer, width, height) => {
@@ -537,7 +581,7 @@
             return keyCodes[code] || 0;
         }
         function keyboard(event) {
-            if (event.type === "keydown") retryFullscreen();
+            if (event.type === "keydown") { retryFullscreen(); retryPointerLock(); }
             const key = raygpuKey(event.code);
             if (key) {
                 if (event.type === "keydown" && audioContext && audioContext.state === "suspended") audioContext.resume();
@@ -570,25 +614,37 @@
             if (document.hidden) wasm.raygpu_blur();
             lastFrame = undefined;
         }, {signal: events.signal});
-        const button = value => value === 2 ? 1 : value === 1 ? 2 : value === 0 ? 0 : -1;
+        const button = value => value === 2 ? 1 : value === 1 ? 2 : value === 0 ? 0 : value === 3 ? 3 : value === 4 ? 4 : -1;
         function mouse(event) {
             const bounds = canvas.getBoundingClientRect();
             if (!bounds.width || !bounds.height) return;
-            wasm.raygpu_mouse((event.clientX-bounds.left)*canvas.width/bounds.width,
-                (event.clientY-bounds.top)*canvas.height/bounds.height,
-                event.type === "pointermove" ? -1 : button(event.button), event.type === "pointerdown" ? 1 : 0);
+            const scaleX=canvas.width/bounds.width,scaleY=canvas.height/bounds.height;
+            if(document.pointerLockElement===canvas){mouseX+=event.movementX*scaleX;mouseY+=event.movementY*scaleY;}
+            else {mouseX=(event.clientX-bounds.left)*scaleX;mouseY=(event.clientY-bounds.top)*scaleY;}
+            mouseX=Math.max(0,Math.min(canvas.width,mouseX));mouseY=Math.max(0,Math.min(canvas.height,mouseY));
+            const action=event.type==="pointerdown"?0:(event.type==="pointerup"||event.type==="pointercancel"?2:1);
+            if(event.pointerType==="touch"||event.pointerType==="pen") {
+                wasm.raygpu_mouse(mouseX,mouseY,-1,0);wasm.raygpu_touch(event.pointerId,action,mouseX,mouseY);
+            } else {
+                const mapped=event.type==="pointermove"?-1:button(event.button);
+                wasm.raygpu_mouse(mouseX,mouseY,mapped,event.type==="pointerdown"?1:0);
+                if(event.button===0||event.type==="pointermove")wasm.raygpu_touch(-1,action,mouseX,mouseY);
+            }
             if (event.type === "pointerdown") {
-                retryFullscreen();
+                retryFullscreen(); retryPointerLock();
                 if (audioContext && audioContext.state === "suspended") audioContext.resume();
                 canvas.focus(); canvas.setPointerCapture(event.pointerId);
             }
+            if(event.pointerType==="touch"||event.pointerType==="pen")event.preventDefault();
         }
-        for (const type of ["pointermove", "pointerdown", "pointerup"]) canvas.addEventListener(type, mouse, {signal: events.signal});
+        for (const type of ["pointermove", "pointerdown", "pointerup", "pointercancel"]) canvas.addEventListener(type, mouse, {signal: events.signal});
+        canvas.addEventListener("pointerenter",()=>{cursorOnCanvas=true;},{signal:events.signal});
+        canvas.addEventListener("pointerleave",()=>{cursorOnCanvas=false;},{signal:events.signal});
+        document.addEventListener("pointerlockchange",()=>{applyCursor();},{signal:events.signal});
         canvas.addEventListener("wheel", event => {
             wasm.raygpu_wheel(-Math.sign(event.deltaX), -Math.sign(event.deltaY));
             event.preventDefault();
         }, {signal: events.signal, passive: false});
-        canvas.addEventListener("pointercancel", () => wasm.raygpu_blur(), {signal: events.signal});
         canvas.addEventListener("contextmenu", event => event.preventDefault(), {signal: events.signal});
         function frame(timestamp) {
             if (stopped) return;

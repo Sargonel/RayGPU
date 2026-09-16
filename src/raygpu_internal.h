@@ -13,6 +13,11 @@ MR_IMPORT("window_command") void mr_web_window_command(int command,int a,int b,c
 MR_IMPORT("window_query") int mr_web_window_query(int command,int index);
 MR_IMPORT("window_text") int mr_web_window_text(int command,int index,char *text,int size);
 MR_IMPORT("window_icon") void mr_web_window_icon(const void *pixels,int width,int height);
+MR_IMPORT("gamepad_available") int mr_web_gamepad_available(int gamepad);
+MR_IMPORT("gamepad_name") int mr_web_gamepad_name(int gamepad,char *text,int size);
+MR_IMPORT("gamepad_button") int mr_web_gamepad_button(int gamepad,int button);
+MR_IMPORT("gamepad_axis") float mr_web_gamepad_axis(int gamepad,int axis);
+MR_IMPORT("gamepad_vibrate") void mr_web_gamepad_vibrate(int gamepad,float leftMotor,float rightMotor,int milliseconds);
 MR_IMPORT("clipboard_set") void mr_web_clipboard_set(const char *text);
 MR_IMPORT("clipboard_size") int mr_web_clipboard_size(void);
 MR_IMPORT("clipboard_get") int mr_web_clipboard_get(char *text,int size);
@@ -56,6 +61,8 @@ MR_IMPORT("math_log") float mr_web_logf(float x);
 MR_IMPORT("math_exp") float mr_web_expf(float x);
 MR_IMPORT("math_floor") float mr_web_floorf(float x);
 MR_IMPORT("math_ldexp") float mr_web_ldexpf(float x,int exponent);
+MR_IMPORT("math_atan2") float mr_web_atan2f(float y,float x);
+#define atan2f mr_web_atan2f
 static float sqrtf(float x) { return __builtin_sqrtf(x); }
 /* Freestanding compiler support: no libc or WASI runtime is linked. */
 void *memset(void *destination,int value,size_t size) {
@@ -87,14 +94,17 @@ static int puts(const char *s) { mr_log(s); return 0; }
 #define NOMINMAX
 #define NOGDI
 #define CloseWindow Win32CloseWindow
+#define ShowCursor Win32ShowCursor
 #include <windows.h>
 #include <windowsx.h>
 #include <shellapi.h>
 #include <mmsystem.h>
+#include <xinput.h>
 #ifndef WAVE_FORMAT_IEEE_FLOAT
 #define WAVE_FORMAT_IEEE_FLOAT 0x0003
 #endif
 #undef CloseWindow
+#undef ShowCursor
 #undef DrawText
 #undef DrawTextEx
 #undef LoadImage
@@ -118,6 +128,10 @@ static int puts(const char *s) { mr_log(s); return 0; }
 #define MR_MAX_MESHES 1024
 #define MR_MAX_3D_DRAWS 4096
 #define MR_MAX_3D_INSTANCES 8192
+#define MR_MAX_GAMEPADS 4
+#define MR_GAMEPAD_BUTTONS 18
+#define MR_GAMEPAD_AXES 6
+#define MR_MAX_TOUCH_POINTS 10
 #define MR_PI 3.14159265358979323846f
 #define MR_DEG2RAD (MR_PI/180.0f)
 static void mr_dispatch_readbacks(void);
@@ -138,6 +152,11 @@ typedef struct MRShaderEntry {
     unsigned int attributeHashes[16],extraTextures[RAYGPU_MAX_SHADER_TEXTURES]; unsigned char attributeSlots[16]; int attributeCount;
 } MRShaderEntry;
 typedef struct MRBatch { unsigned int first,count,texture,blend,shader,x,y,width,height; } MRBatch;
+typedef struct MRGamepadState {
+    bool available,buttons[MR_GAMEPAD_BUTTONS],pressed[MR_GAMEPAD_BUTTONS],released[MR_GAMEPAD_BUTTONS];
+    float axes[MR_GAMEPAD_AXES]; char name[128]; double vibrationEnd;
+} MRGamepadState;
+typedef struct MRTouchPoint { int id; Vector2 position; } MRTouchPoint;
 typedef struct MRGpuVertex { float x,y,z,nx,ny,nz,u,v; unsigned char r,g,b,a; } MRGpuVertex;
 typedef struct MRInstance3D { Matrix model,viewProjection; Color tint; float padding[3]; Vector3 camera; float cameraPadding; } MRInstance3D;
 typedef struct MRDraw3D { unsigned int mesh,texture,firstInstance,instanceCount; } MRDraw3D;
@@ -169,7 +188,13 @@ static struct {
     unsigned int vertexCount,batchCount,drawCount3d,instanceCount3d;
     bool ready,close,error,drawing,adapterDone,deviceDone,overflow,softwareFrameLimit,resized,focused;
     bool keys[512],pressed[512],repeated[512],released[512];
-    bool buttons[3],clicked[3],buttonReleased[3];
+    bool buttons[7],clicked[7],buttonReleased[7];
+    MRGamepadState gamepads[MR_MAX_GAMEPADS]; int gamepadLastButton;
+    MRTouchPoint touches[MR_MAX_TOUCH_POINTS]; int touchCount;
+    unsigned int gesturesEnabled,gestureDetected; double gestureStartTime,gestureLastTapTime,gestureHoldStart;
+    Vector2 gestureStart,gestureLastTapPosition,gestureDrag,gesturePinch; float gestureDragAngle,gesturePinchAngle,gesturePinchDistance;
+    bool cursorHidden,cursorDisabled,cursorOnScreen,mouseTracking;
+    int cursorShape;
     int keyQueue[16],keyQueueCount,charQueue[16],charQueueCount,exitKey,minWidth,minHeight,maxWidth,maxHeight;
     Vector2 mouse,mouseDelta,wheel,mouseOffset,mouseScale; Color clear; Texture2D shapesTexture; Rectangle shapesSource;
     Camera2D camera2d; Camera3D camera3d; bool camera2dActive,camera3dActive,scissorActive; Rectangle scissor; int blendMode;
