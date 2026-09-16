@@ -22,6 +22,7 @@ MR_IMPORT("render_texture") void mr_web_render_texture(unsigned int id,int width
 MR_IMPORT("shader_load") int mr_web_shader_load(unsigned int id,const char *vsCode,const char *fsCode);
 MR_IMPORT("shader_unload") void mr_web_shader_unload(unsigned int id);
 MR_IMPORT("shader_uniform") void mr_web_shader_uniform(unsigned int id,int location,const void *data,int size);
+MR_IMPORT("shader_texture") void mr_web_shader_texture(unsigned int id,int location,unsigned int textureId);
 MR_IMPORT("texture_update") void mr_web_texture_update(unsigned int id,int x,int y,int width,int height,const void *pixels);
 MR_IMPORT("texture_params") void mr_web_texture_params(unsigned int id,int filter,int wrap);
 MR_IMPORT("unload") void mr_web_unload(unsigned int id);
@@ -120,9 +121,10 @@ typedef struct MRTexture {
 } MRTexture;
 typedef struct MRShaderEntry {
 #ifdef _WIN32
-    WGPURenderPipeline pipelines[6]; WGPUBuffer uniformBuffer; WGPUBindGroup uniformGroup;
+    WGPURenderPipeline pipelines[6]; WGPUBuffer uniformBuffer; WGPUBindGroup uniformGroup,textureGroup;
 #endif
     unsigned int id,nameHashes[32]; unsigned char nameSlots[32]; int locationCount; bool explicitLocations; unsigned char uniforms[32][64];
+    unsigned int attributeHashes[16],extraTextures[RAYGPU_MAX_SHADER_TEXTURES]; unsigned char attributeSlots[16]; int attributeCount;
 } MRShaderEntry;
 typedef struct MRBatch { unsigned int first,count,texture,blend,shader,x,y,width,height; } MRBatch;
 typedef struct MRGpuVertex { float x,y,z,nx,ny,nz,u,v; unsigned char r,g,b,a; } MRGpuVertex;
@@ -146,7 +148,7 @@ static struct {
     WGPUSurface surface; WGPUSurfaceConfiguration config;
     WGPURenderPipeline pipelines[6],pipeline3d; WGPUBuffer buffer,instanceBuffer3d;
     WGPUTexture depthTexture; WGPUTextureView depthView; int depthWidth,depthHeight;
-    WGPUBindGroupLayout textureLayout,uniformLayout; WGPUSampler sampler;
+    WGPUBindGroupLayout textureLayout,uniformLayout,shaderTextureLayout; WGPUSampler sampler;
 #endif
     MRTexture textures[MR_MAX_TEXTURES]; unsigned int nextTexture,white;
     MRMeshEntry meshes[MR_MAX_MESHES]; unsigned int nextMesh;

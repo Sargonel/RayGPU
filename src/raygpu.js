@@ -9,7 +9,7 @@
     const shaders = new Map();
     const meshes = new Map();
     const events = new AbortController();
-    let device, context, buffer, instanceBuffer3d, wasm, pipelines, pipeline3d, sampler, textureLayout, uniformLayout, defaultPipelineLayout, pipelineLayout, audioContext, masterGain;
+    let device, context, buffer, instanceBuffer3d, wasm, pipelines, pipeline3d, sampler, textureLayout, uniformLayout, shaderTextureLayout, defaultPipelineLayout, pipelineLayout, audioContext, masterGain;
     let depthTexture, depthWidth=0, depthHeight=0;
     const sounds = new Map();
     let stopped = false, targetFPS = 60, lastFrame;
@@ -32,6 +32,17 @@
         console.error(error && error.message ? error.message : String(error));
         close();
         status.textContent = "WebGPU error: " + (error.message || error);
+    }
+    function rebuildShaderTextures(shader) {
+        const fallback = textures.values().next().value;
+        if (!shader || !fallback || !shaderTextureLayout) return false;
+        const entries = [];
+        for (let slot=0; slot<8; slot++) {
+            const texture = textures.get(shader.textureIds[slot]) || fallback;
+            entries.push({binding:slot*2,resource:texture.sampler || sampler},{binding:slot*2+1,resource:texture.view});
+        }
+        shader.textureGroup = device.createBindGroup({layout:shaderTextureLayout,entries});
+        return true;
     }
     try {
         if (!navigator.gpu) throw new Error("WebGPU is unavailable. Use a WebGPU-capable browser on HTTPS or localhost.");
@@ -69,8 +80,11 @@
         ]});
         uniformLayout=device.createBindGroupLayout({entries:[{binding:0,visibility:GPUShaderStage.VERTEX|GPUShaderStage.FRAGMENT,
             buffer:{type:"uniform",minBindingSize:2048}}]});
+        shaderTextureLayout=device.createBindGroupLayout({entries:Array.from({length:16},(_,binding)=>binding%2===0?
+            {binding,visibility:GPUShaderStage.FRAGMENT,sampler:{type:"filtering"}}:
+            {binding,visibility:GPUShaderStage.FRAGMENT,texture:{sampleType:"float",viewDimension:"2d"}})});
         defaultPipelineLayout=device.createPipelineLayout({bindGroupLayouts:[textureLayout]});
-        pipelineLayout=device.createPipelineLayout({bindGroupLayouts:[textureLayout,uniformLayout]});
+        pipelineLayout=device.createPipelineLayout({bindGroupLayouts:[textureLayout,uniformLayout,shaderTextureLayout]});
         const pipelineDescriptor = blend => ({layout:defaultPipelineLayout,
             vertex:{module:shader,entryPoint:"vs",buffers:[{arrayStride:24,attributes:[
                 {shaderLocation:0,offset:0,format:"float32x2"},{shaderLocation:1,offset:8,format:"float32x2"},
@@ -332,13 +346,18 @@
                         depthStencil:{format:"depth24plus",depthWriteEnabled:true,depthCompare:"less-equal"}}));
                     const uniformBuffer=device.createBuffer({size:2048,usage:GPUBufferUsage.UNIFORM|GPUBufferUsage.COPY_DST});
                     const uniformGroup=device.createBindGroup({layout:uniformLayout,entries:[{binding:0,resource:{buffer:uniformBuffer,size:2048}}]});
-                    shaders.set(id,{pipelines:list,uniformBuffer,uniformGroup});return 1;
+                    const shader={pipelines:list,uniformBuffer,uniformGroup,textureIds:new Array(8).fill(0),textureGroup:null};
+                    if(!rebuildShaderTextures(shader)){uniformBuffer.destroy();return 0;}shaders.set(id,shader);return 1;
                 } catch(error) { console.error(error);return 0; }
             },
             shader_unload: id => { const shader=shaders.get(id);if(shader)shader.uniformBuffer.destroy();shaders.delete(id); },
             shader_uniform: (id, location, pointer, size) => {
                 const shader=shaders.get(id);if(!shader||location<0||location>=32)return;
                 device.queue.writeBuffer(shader.uniformBuffer,location*64,new Uint8Array(wasm.memory.buffer,pointer,size));
+            },
+            shader_texture: (id, location, textureId) => {
+                const shader=shaders.get(id);if(!shader||location<0||location>=8)return;
+                shader.textureIds[location]=textureId;rebuildShaderTextures(shader);
             },
             mesh_upload: (id, vertices, vertexCount, indices, indexCount) => {
                 const previous=meshes.get(id);if(previous){previous.vertexBuffer.destroy();if(previous.indexBuffer)previous.indexBuffer.destroy();}
@@ -389,7 +408,7 @@
                         const shader=shaders.get(commands[i+4]);
                         const selected=shader?shader.pipelines:pipelines;
                         pass.setPipeline(selected[commands[i+3]] || selected[0]);
-                        if(shader)pass.setBindGroup(1,shader.uniformGroup);
+                        if(shader){pass.setBindGroup(1,shader.uniformGroup);pass.setBindGroup(2,shader.textureGroup);}
                         pass.setScissorRect(x,y,width,height);
                         pass.setBindGroup(0, entry.group); pass.draw(commands[i+1], 1, commands[i], 0);
                     }

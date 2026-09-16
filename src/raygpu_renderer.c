@@ -28,7 +28,7 @@ static void mr_render_texture_pass(MRTexture *target,int width,int height) {
             unsigned int h=batch.height;if(h>(unsigned int)height-y)h=(unsigned int)height-y;if(!w||!h)continue;
             MRShaderEntry *shader=mr_shader(batch.shader);
             wgpuRenderPassEncoderSetPipeline(pass,shader?shader->pipelines[batch.blend<6?batch.blend:0]:mr.pipelines[batch.blend<6?batch.blend:0]);
-            if(shader)wgpuRenderPassEncoderSetBindGroup(pass,1,shader->uniformGroup,0,NULL);
+            if(shader){wgpuRenderPassEncoderSetBindGroup(pass,1,shader->uniformGroup,0,NULL);wgpuRenderPassEncoderSetBindGroup(pass,2,shader->textureGroup,0,NULL);}
             wgpuRenderPassEncoderSetScissorRect(pass,x,y,w,h);wgpuRenderPassEncoderSetBindGroup(pass,0,texture->group,0,NULL);
             wgpuRenderPassEncoderDraw(pass,batch.count,1,batch.first,0);
         }
@@ -77,7 +77,7 @@ void EndDrawing(void) {
                     if (!width || !height) continue;
                     MRShaderEntry *shader=mr_shader(batch.shader);
                     wgpuRenderPassEncoderSetPipeline(pass,shader?shader->pipelines[batch.blend<6?batch.blend:0]:mr.pipelines[batch.blend<6?batch.blend:0]);
-                    if(shader)wgpuRenderPassEncoderSetBindGroup(pass,1,shader->uniformGroup,0,NULL);
+                    if(shader){wgpuRenderPassEncoderSetBindGroup(pass,1,shader->uniformGroup,0,NULL);wgpuRenderPassEncoderSetBindGroup(pass,2,shader->textureGroup,0,NULL);}
                     wgpuRenderPassEncoderSetScissorRect(pass,x,y,width,height);
                     wgpuRenderPassEncoderSetBindGroup(pass,0,texture->group,0,NULL);
                     wgpuRenderPassEncoderDraw(pass,batch.count,1,batch.first,0);
@@ -116,6 +116,7 @@ void CloseWindow(void) {
     if (mr.sampler) wgpuSamplerRelease(mr.sampler);
     if (mr.textureLayout) wgpuBindGroupLayoutRelease(mr.textureLayout);
     if (mr.uniformLayout) wgpuBindGroupLayoutRelease(mr.uniformLayout);
+    if (mr.shaderTextureLayout) wgpuBindGroupLayoutRelease(mr.shaderTextureLayout);
     if (mr.queue) wgpuQueueRelease(mr.queue);
     if (mr.device) { wgpuDeviceDestroy(mr.device); wgpuDeviceRelease(mr.device); }
     if (mr.surface) wgpuSurfaceRelease(mr.surface);
@@ -125,7 +126,7 @@ void CloseWindow(void) {
     if (mr.window) DestroyWindow(mr.window);
     mr.window=NULL;
 #endif
-    mr.buffer=NULL;mr.instanceBuffer3d=NULL;mr.pipeline3d=NULL;mr.depthView=NULL;mr.depthTexture=NULL;memset(mr.pipelines,0,sizeof mr.pipelines); mr.sampler=NULL; mr.textureLayout=NULL;mr.uniformLayout=NULL; mr.queue=NULL;
+    mr.buffer=NULL;mr.instanceBuffer3d=NULL;mr.pipeline3d=NULL;mr.depthView=NULL;mr.depthTexture=NULL;memset(mr.pipelines,0,sizeof mr.pipelines); mr.sampler=NULL; mr.textureLayout=NULL;mr.uniformLayout=NULL;mr.shaderTextureLayout=NULL; mr.queue=NULL;
     mr.device=NULL; mr.surface=NULL; mr.adapter=NULL; mr.instance=NULL;
 }
 #else

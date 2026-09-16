@@ -326,6 +326,35 @@ Texture shaders use group 0:
 | 0 | filtering sampler |
 | 1 | `texture_2d<f32>` |
 
+Custom shaders can bind up to `RAYGPU_MAX_SHADER_TEXTURES` additional textures
+through group 2. Each slot uses two bindings:
+
+| Slot | Sampler binding | Texture binding |
+|---:|---:|---:|
+| 0 | 0 | 1 |
+| 1 | 2 | 3 |
+| ... | `slot*2` | `slot*2 + 1` |
+
+Declare the pair in WGSL and give the texture a stable location name:
+
+```wgsl
+// @raygpu_sampler maskTexture 0
+@group(2) @binding(0) var maskSampler: sampler;
+@group(2) @binding(1) var maskTexture: texture_2d<f32>;
+```
+
+Then bind it with the raylib-style API:
+
+```c
+int maskLoc = GetShaderLocation(shader, "maskTexture");
+SetShaderValueTexture(shader, maskLoc, mask);
+```
+
+RayGPU also reflects direct WGSL vertex parameters, so
+`GetShaderLocationAttrib(shader, "position")` returns the number from
+`@location(...)`. Shaders that pass a vertex-input structure can declare the
+same metadata explicitly with `// @raygpu_attribute position 0`.
+
 Optional uniforms use a 2048-byte buffer at group 1, binding 0. Declare it as:
 
 ```wgsl
@@ -355,12 +384,11 @@ Declarations can appear in either shader stage and do not depend on the order
 of `GetShaderLocation()` calls. If a shader contains no declarations, RayGPU
 keeps the earlier compatibility behavior and assigns locations in first-use
 order. New shaders should use declarations so misspellings are detected and C
-and WGSL stay synchronized. See the shader in [`main.c`](main.c) or
+and WGSL stay synchronized. See the extra-sampler shader in [`main.c`](main.c) or
 [`examples/snake.c`](examples/snake.c) for complete examples.
 
 ## Remaining core, 2D, and audio work
 
-- Extra shader texture samplers and shader attribute reflection.
 - Gamepads, vibration, touch input, gestures, and cursor management.
 - Fullscreen, borderless mode, monitor selection/information, window icons,
   opacity, clipboard, and dropped files.

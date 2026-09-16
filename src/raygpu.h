@@ -12,6 +12,7 @@
 #define RAYGPU_VERSION_MAJOR 0
 #define RAYGPU_VERSION_MINOR 1
 #define RAYGPU_VERSION_PATCH 0
+#define RAYGPU_MAX_SHADER_TEXTURES 8
 #define RAYGPU_VERSION "0.1.0-dev"
 
 /* Foundational public types intentionally match raylib's field layout. */
@@ -251,9 +252,11 @@ void UnloadShader(Shader shader);
 void BeginShaderMode(Shader shader);
 void EndShaderMode(void);
 int GetShaderLocation(Shader shader,const char *uniformName);
+int GetShaderLocationAttrib(Shader shader,const char *attribName);
 void SetShaderValue(Shader shader,int locIndex,const void *value,int uniformType);
 void SetShaderValueV(Shader shader,int locIndex,const void *value,int uniformType,int count);
 void SetShaderValueMatrix(Shader shader,int locIndex,Matrix mat);
+void SetShaderValueTexture(Shader shader,int locIndex,Texture2D texture);
 void BeginMode3D(Camera3D camera);
 void EndMode3D(void);
 Ray GetScreenToWorldRay(Vector2 position,Camera camera);
