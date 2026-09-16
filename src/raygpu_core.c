@@ -186,7 +186,7 @@ Texture2D LoadTextureRGBA(const unsigned char *pixels,int width,int height) {
     WGPUTextureDescriptor desc=WGPU_TEXTURE_DESCRIPTOR_INIT;
     desc.size=(WGPUExtent3D){(uint32_t)width,(uint32_t)height,1};
     desc.dimension=WGPUTextureDimension_2D; desc.format=WGPUTextureFormat_RGBA8Unorm;
-    desc.usage=WGPUTextureUsage_TextureBinding|WGPUTextureUsage_CopyDst;
+    desc.usage=WGPUTextureUsage_TextureBinding|WGPUTextureUsage_CopyDst|WGPUTextureUsage_CopySrc;
     t->texture=wgpuDeviceCreateTexture(mr.device,&desc);
     t->view=wgpuTextureCreateView(t->texture,NULL);
     WGPUTexelCopyTextureInfo destination=WGPU_TEXEL_COPY_TEXTURE_INFO_INIT; destination.texture=t->texture;
@@ -201,7 +201,7 @@ Texture2D LoadTextureRGBA(const unsigned char *pixels,int width,int height) {
     WGPUBindGroupDescriptor group=WGPU_BIND_GROUP_DESCRIPTOR_INIT;
     group.layout=mr.textureLayout; group.entryCount=2; group.entries=entries;
     t->group=wgpuDeviceCreateBindGroup(mr.device,&group);
-    t->id=++mr.nextTexture;
+    t->pixels=MemAlloc((unsigned int)((size_t)width*height*4));if(!t->pixels){wgpuBindGroupRelease(t->group);wgpuTextureViewRelease(t->view);wgpuTextureRelease(t->texture);memset(t,0,sizeof*t);return(Texture2D){0};}memcpy(t->pixels,pixels,(size_t)width*height*4);t->width=width;t->height=height;t->mipmaps=1;t->id=++mr.nextTexture;
     return (Texture2D){t->id,width,height,1,7};
 }
 #else
@@ -209,7 +209,7 @@ Texture2D LoadTextureRGBA(const unsigned char *pixels,int width,int height) {
     if (!mr.ready || !pixels || width<=0 || height<=0 || width>8192 || height>8192) return (Texture2D){0};
     for (int i=0;i<MR_MAX_TEXTURES;i++) if (!mr.textures[i].id) {
         unsigned int id=++mr.nextTexture;
-        mr.textures[i].id=id; mr_web_texture(id,pixels,width,height);
+        mr.textures[i].pixels=MemAlloc((unsigned int)((size_t)width*height*4));if(!mr.textures[i].pixels)return(Texture2D){0};memcpy(mr.textures[i].pixels,pixels,(size_t)width*height*4);mr.textures[i].width=width;mr.textures[i].height=height;mr.textures[i].mipmaps=1;mr.textures[i].id=id; mr_web_texture(id,pixels,width,height);
         return (Texture2D){id,width,height,1,7};
     }
     puts("raygpu: texture limit reached"); return (Texture2D){0};
@@ -229,7 +229,7 @@ void UnloadTexture(Texture2D texture) {
     if (texture.id==mr.shapesTexture.id) {
         mr.shapesTexture=(Texture2D){mr.white,1,1,1,7}; mr.shapesSource=(Rectangle){0,0,1,1};
     }
-    memset(t,0,sizeof *t);
+    MemFree(t->pixels);memset(t,0,sizeof *t);
 }
 static MRShaderEntry *mr_shader(unsigned int id) {
     if(!id)return NULL;for(int i=0;i<32;i++)if(mr.shaders[i].id==id)return &mr.shaders[i];return NULL;
@@ -238,6 +238,7 @@ void UpdateTextureRec(Texture2D texture,Rectangle rec,const void *pixels) {
     MRTexture *t=mr_texture(texture.id); if (!t || !pixels) return;
     int x=(int)rec.x,y=(int)rec.y,width=(int)rec.width,height=(int)rec.height;
     if (x<0 || y<0 || width<=0 || height<=0 || x+width>texture.width || y+height>texture.height) return;
+    if(t->pixels&&!t->renderTarget)for(int row=0;row<height;row++)memcpy(t->pixels+((size_t)(y+row)*t->width+x)*4,(const unsigned char*)pixels+(size_t)row*width*4,(size_t)width*4);
 #ifdef _WIN32
     WGPUTexelCopyTextureInfo destination=WGPU_TEXEL_COPY_TEXTURE_INFO_INIT;
     destination.texture=t->texture; destination.origin=(WGPUOrigin3D){(uint32_t)x,(uint32_t)y,0};
@@ -537,6 +538,7 @@ bool IsWindowReady(void) { return mr.ready; }
 bool RayGPUHadError(void) { return mr.error; }
 bool WindowShouldClose(void) {
     mr_pump();
+    mr_dispatch_readbacks();
     if (mr.exitKey>KEY_NULL && IsKeyPressed(mr.exitKey)) mr.close=true;
     double now=mr_clock(); mr.dt=(float)(now-mr.previous); mr.previous=now; mr.frameStart=now;
     if (mr.dt>0.1f) mr.dt=0.1f;
@@ -931,7 +933,7 @@ void SetMousePosition(int x,int y) {
 }
 void SetMouseOffset(int x,int y) { mr.mouseOffset=(Vector2){(float)x,(float)y}; }
 void SetMouseScale(float x,float y) { mr.mouseScale=(Vector2){x,y}; }
-void BeginDrawing(void) { mr.vertexCount=mr.batchCount=mr.drawCount3d=mr.instanceCount3d=0; mr.overflow=false; mr.renderTarget=0; mr.targetWidth=mr.width; mr.targetHeight=mr.height; mr.drawing=mr.ready; }
+void BeginDrawing(void) { mr_dispatch_readbacks();mr.vertexCount=mr.batchCount=mr.drawCount3d=mr.instanceCount3d=0; mr.overflow=false; mr.renderTarget=0; mr.targetWidth=mr.width; mr.targetHeight=mr.height; mr.drawing=mr.ready; }
 void ClearBackground(Color color) { mr.clear=color; mr.vertexCount=mr.batchCount=mr.drawCount3d=mr.instanceCount3d=0; }
 void BeginBlendMode(int mode) { mr.blendMode=(mode>=0 && mode<6)?mode:BLEND_ALPHA; }
 void EndBlendMode(void) { mr.blendMode=BLEND_ALPHA; }

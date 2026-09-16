@@ -239,30 +239,63 @@ Opening `index.html` through a `file://` URL is not supported.
   MagicaVoxel VOX v150/v200 colored surface meshes; and binary/compressed/ASCII
   M3D models, materials, embedded textures, bones, and interpolated animations.
   Large imported meshes are split into batches of at most 65,535 vertices.
-- PNG, JPEG, BMP, TGA, and GIF decoding from files or memory, including
-  animated GIF sequences through `LoadImageAnim()`/`LoadImageAnimFromMemory()`.
+- PNG, JPEG, BMP, TGA, GIF, QOI, and DDS decoding from files or memory,
+  including animated GIF sequences through
+  `LoadImageAnim()`/`LoadImageAnimFromMemory()`, plus raw pixel loading.
 - Image creation, copying, cropping, resizing, flipping, arbitrary rotation,
   alpha/color processing, palettes, blur, convolution, dithering, channel
   extraction, CPU drawing, and procedural gradients/noise/cellular images.
-- Texture loading, partial/full updates, filtering, wrapping, source rectangles,
-  scaling, rotation, nine-patch drawing, and three-patch drawing.
+- Image and texture mipmap generation; PNG, JPEG, BMP, TGA, QOI, and C-header
+  image export; screenshots; texture readback; texture loading, partial/full
+  updates, filtering, wrapping, source rectangles, scaling, rotation,
+  nine-patch drawing, and three-patch drawing. `LoadImageFromTexture()` reads
+  CPU-backed textures synchronously on every platform. Render textures and the
+  screen use the portable callback APIs `LoadImageFromTextureAsync()` and
+  `LoadImageFromScreenAsync()` because browser WebGPU readback is asynchronous.
+  RayGPU queues callbacks on every platform, so they never run before the
+  request function returns. The callback owns the returned `Image` and releases
+  it with `UnloadImage()`. Browser screenshots download a PNG.
+
+Async image callbacks are dispatched from RayGPU's main-loop processing during
+`WindowShouldClose()` or `BeginDrawing()`. An application waiting for readback
+must continue running one of those functions; a blocking loop that calls
+neither cannot dispatch the callback. The callback owns `image.data`, including
+an invalid image delivered after an asynchronous readback failure, and should
+call `UnloadImage(image)` when finished:
+
+```c
+static void OnReadback(Image image, void *userData)
+{
+    (void)userData;
+    if (IsImageValid(image)) ExportImage(image, "capture.png");
+    UnloadImage(image);
+}
+
+LoadImageFromTextureAsync(target.texture, OnReadback, NULL);
+```
 - Render textures, alpha/additive/multiplied/color/premultiplied blend modes, and
   scissor rectangles.
 - Custom WGSL vertex and fragment shaders with float, vector, integer, array,
   and matrix uniform uploads.
 - Built-in text plus TTF/OTF loading from files or memory, UTF-8 drawing,
   rotated text, measurement, and glyph lookup.
-- WAV loading from files or memory and sound playback with pause, resume,
-  volume, pitch, pan, and sample updates.
+- WAV, OGG Vorbis, MP3, QOA, FLAC, XM, and MOD loading from files or memory;
+  sound and music playback with pause, resume, seek, looping, volume, pitch,
+  pan, and time queries; double-buffered music and procedural audio streams;
+  stream and mixed processors; and WAV or C-header export. Compressed music is
+  decoded to PCM when loaded, then queued to the audio device in stream chunks.
 - Binary/text file loading and saving, path inspection, memory allocation,
   Base64 encoding/decoding, CRC32/MD5/SHA1 hashing, random-number utilities,
   and common color/text helpers. Browser saves use a normal file download.
 - Growable WebAssembly memory: 64 MB initially, up to 2 GB or the browser's
   available limit.
 
-Image decoding and font rasterization use `stb_image` v2.30 and
-`stb_truetype`, bundled under `src/external/`. Both use public-domain/MIT
-licensing and are also bundled by raylib. Users do not install them separately.
+Image decoding, encoding, and font rasterization use `stb_image` v2.30,
+`stb_image_write`, `qoi.h`, and `stb_truetype`, bundled under `src/external/`
+with their original public-domain/MIT licenses. Audio decoding uses bundled
+`stb_vorbis`, `dr_mp3`, `dr_flac`, `qoa.h`, `jar_xm`, and `jar_mod` sources
+under their original licenses. These are also used or bundled by raylib; users
+do not install them separately.
 M3D importing uses the bundled Model3D SDK in `src/external/m3d.h`, under its
 original MIT license. All importers use RayGPU's file and memory APIs on native
 and web builds; no additional installation is needed.
@@ -321,11 +354,9 @@ and WGSL stay synchronized. See the shader in [`main.c`](main.c) or
 
 ## Remaining core, 2D, and audio work
 
-- OGG, MP3, QOA, optional FLAC, XM, and MOD decoding; streamed music;
-  procedural audio streams and processors; and wave exporting.
-- Additional raylib image formats such as RAW, QOI, and DDS; image and texture
-  mipmaps; image exporting; screenshots; and GPU texture
-  readback.
+- Incremental compressed-music decoding instead of the current load-time PCM
+  decode.
+- Additional compressed DDS variants.
 - Image-based fonts, font-data extraction, and font-atlas export helpers.
 - Extra shader texture samplers and shader attribute reflection.
 - Gamepads, vibration, touch input, gestures, and cursor management.

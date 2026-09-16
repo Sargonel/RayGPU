@@ -100,6 +100,7 @@ void EndDrawing(void) {
 }
 void CloseWindow(void) {
     if (mr_audio_ready) CloseAudioDevice();
+    mr_discard_readbacks();
     mr.ready=false; mr.drawing=false; mr.close=true;
     if (mr.surface && mr.config.height) wgpuSurfaceUnconfigure(mr.surface);
     mr.white=0;
@@ -146,6 +147,7 @@ void EndDrawing(void) {
 void CloseWindow(void) {
     if (!mr.ready) return;
     if (mr_audio_ready) CloseAudioDevice();
+    mr_discard_readbacks();
     mr.ready=false; mr.close=true; mr.drawing=false; mr.white=0;
     for (int i=0;i<MR_MAX_TEXTURES;i++) if (mr.textures[i].id) UnloadTexture((Texture2D){mr.textures[i].id,0,0,0,0});
     for (int i=0;i<32;i++) if (mr.shaders[i].id) UnloadShader((Shader){mr.shaders[i].id,NULL});

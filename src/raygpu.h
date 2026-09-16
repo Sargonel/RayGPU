@@ -48,6 +48,8 @@ typedef struct Sound { AudioStream stream; unsigned int frameCount; } Sound;
 typedef struct Music {
     AudioStream stream; unsigned int frameCount; bool looping; int ctxType; void *ctxData;
 } Music;
+typedef void (*AudioCallback)(void *bufferData,unsigned int frames);
+typedef void (*ImageLoadCallback)(Image image,void *userData);
 typedef struct Camera3D { Vector3 position,target,up; float fovy; int projection; } Camera3D;
 typedef Camera3D Camera;
 typedef struct Camera2D { Vector2 offset,target; float rotation,zoom; } Camera2D;
@@ -153,6 +155,12 @@ typedef enum TextureFilter {
     TEXTURE_FILTER_POINT=0, TEXTURE_FILTER_BILINEAR, TEXTURE_FILTER_TRILINEAR,
     TEXTURE_FILTER_ANISOTROPIC_4X, TEXTURE_FILTER_ANISOTROPIC_8X, TEXTURE_FILTER_ANISOTROPIC_16X
 } TextureFilter;
+typedef enum PixelFormat {
+    PIXELFORMAT_UNCOMPRESSED_GRAYSCALE=1,PIXELFORMAT_UNCOMPRESSED_GRAY_ALPHA,
+    PIXELFORMAT_UNCOMPRESSED_R5G6B5,PIXELFORMAT_UNCOMPRESSED_R8G8B8,
+    PIXELFORMAT_UNCOMPRESSED_R5G5B5A1,PIXELFORMAT_UNCOMPRESSED_R4G4B4A4,
+    PIXELFORMAT_UNCOMPRESSED_R8G8B8A8
+} PixelFormat;
 typedef enum TextureWrap {
     TEXTURE_WRAP_REPEAT=0, TEXTURE_WRAP_CLAMP, TEXTURE_WRAP_MIRROR_REPEAT, TEXTURE_WRAP_MIRROR_CLAMP
 } TextureWrap;
@@ -483,12 +491,24 @@ const char *GetWorkingDirectory(void);
 const char *GetApplicationDirectory(void);
 Image LoadImage(const char *fileName);
 Image LoadImageFromMemory(const char *fileType,const unsigned char *fileData,int dataSize);
+Image LoadImageRaw(const char *fileName,int width,int height,int format,int headerSize);
 /* Animated images contain consecutive RGBA8 frames; delays are discarded like raylib.
  * UpdateTexture() with data + frame*width*height*4; UnloadImage() frees all frames. */
 Image LoadImageAnim(const char *fileName,int *frames);
 Image LoadImageAnimFromMemory(const char *fileType,const unsigned char *fileData,int dataSize,int *frames);
 bool IsImageValid(Image image);
 void UnloadImage(Image image);
+void ImageMipmaps(Image *image);
+bool ExportImage(Image image,const char *fileName);
+unsigned char *ExportImageToMemory(Image image,const char *fileType,int *fileSize);
+bool ExportImageAsCode(Image image,const char *fileName);
+Image LoadImageFromTexture(Texture2D texture);
+/* Async readback callbacks never run before the request function returns.
+ * WindowShouldClose() or BeginDrawing() dispatches completed callbacks.
+ * The callback owns image.data and must call UnloadImage(image). */
+bool LoadImageFromTextureAsync(Texture2D texture,ImageLoadCallback callback,void *userData);
+bool LoadImageFromScreenAsync(ImageLoadCallback callback,void *userData);
+void TakeScreenshot(const char *fileName);
 Image GenImageColor(int width,int height,Color color);
 Image GenImageGradientLinear(int width,int height,int direction,Color start,Color end);
 Image GenImageGradientRadial(int width,int height,float density,Color inner,Color outer);
@@ -550,6 +570,7 @@ void UpdateTexture(Texture2D texture,const void *pixels);
 void UpdateTextureRec(Texture2D texture,Rectangle rec,const void *pixels);
 void SetTextureFilter(Texture2D texture,int filter);
 void SetTextureWrap(Texture2D texture,int wrap);
+void GenTextureMipmaps(Texture2D *texture);
 void DrawTexture(Texture2D texture,int x,int y,Color tint);
 void DrawTextureV(Texture2D texture,Vector2 position,Color tint);
 void DrawTextureEx(Texture2D texture,Vector2 position,float rotation,float scale,Color tint);
@@ -574,6 +595,8 @@ void WaveCrop(Wave *wave,int initFrame,int finalFrame);
 float *LoadWaveSamples(Wave wave);
 void UnloadWaveSamples(float *samples);
 void UnloadWave(Wave wave);
+bool ExportWave(Wave wave,const char *fileName);
+bool ExportWaveAsCode(Wave wave,const char *fileName);
 Sound LoadSound(const char *fileName);
 Sound LoadSoundFromWave(Wave wave);
 bool IsSoundValid(Sound sound);
@@ -587,5 +610,40 @@ bool IsSoundPlaying(Sound sound);
 void SetSoundVolume(Sound sound,float volume);
 void SetSoundPitch(Sound sound,float pitch);
 void SetSoundPan(Sound sound,float pan);
+Music LoadMusicStream(const char *fileName);
+Music LoadMusicStreamFromMemory(const char *fileType,const unsigned char *data,int dataSize);
+bool IsMusicValid(Music music);
+void UnloadMusicStream(Music music);
+void PlayMusicStream(Music music);
+bool IsMusicStreamPlaying(Music music);
+void UpdateMusicStream(Music music);
+void StopMusicStream(Music music);
+void PauseMusicStream(Music music);
+void ResumeMusicStream(Music music);
+void SeekMusicStream(Music music,float position);
+void SetMusicVolume(Music music,float volume);
+void SetMusicPitch(Music music,float pitch);
+void SetMusicPan(Music music,float pan);
+float GetMusicTimeLength(Music music);
+float GetMusicTimePlayed(Music music);
+AudioStream LoadAudioStream(unsigned int sampleRate,unsigned int sampleSize,unsigned int channels);
+bool IsAudioStreamValid(AudioStream stream);
+void UnloadAudioStream(AudioStream stream);
+void UpdateAudioStream(AudioStream stream,const void *data,int frameCount);
+bool IsAudioStreamProcessed(AudioStream stream);
+void PlayAudioStream(AudioStream stream);
+void PauseAudioStream(AudioStream stream);
+void ResumeAudioStream(AudioStream stream);
+bool IsAudioStreamPlaying(AudioStream stream);
+void StopAudioStream(AudioStream stream);
+void SetAudioStreamVolume(AudioStream stream,float volume);
+void SetAudioStreamPitch(AudioStream stream,float pitch);
+void SetAudioStreamPan(AudioStream stream,float pan);
+void SetAudioStreamBufferSizeDefault(int size);
+void SetAudioStreamCallback(AudioStream stream,AudioCallback callback);
+void AttachAudioStreamProcessor(AudioStream stream,AudioCallback processor);
+void DetachAudioStreamProcessor(AudioStream stream,AudioCallback processor);
+void AttachAudioMixedProcessor(AudioCallback processor);
+void DetachAudioMixedProcessor(AudioCallback processor);
 
 #endif /* RAYGPU_H */

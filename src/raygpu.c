@@ -5,6 +5,7 @@
 #include "raygpu_core.c"
 #include "raygpu_audio.c"
 #include "raygpu_textures.c"
+#include "raygpu_image_formats.c"
 #include "raygpu_models.c"
 #include "raygpu_model_formats.c"
 #include "raygpu_shapes.c"

@@ -15,6 +15,9 @@ MR_IMPORT("mesh_upload") void mr_web_mesh_upload(unsigned int id,const void *ver
 MR_IMPORT("mesh_update") void mr_web_mesh_update(unsigned int id,const void *vertices,int vertexCount);
 MR_IMPORT("mesh_unload") void mr_web_mesh_unload(unsigned int id);
 MR_IMPORT("texture") void mr_web_texture(unsigned int id,const void *pixels,int width,int height);
+MR_IMPORT("texture_mipmaps") void mr_web_texture_mipmaps(unsigned int id,const void *pixels,int width,int height,int mipmaps);
+MR_IMPORT("texture_readback") int mr_web_texture_readback(unsigned int id,unsigned int requestId);
+MR_IMPORT("screen_readback") int mr_web_screen_readback(unsigned int requestId);
 MR_IMPORT("render_texture") void mr_web_render_texture(unsigned int id,int width,int height);
 MR_IMPORT("shader_load") int mr_web_shader_load(unsigned int id,const char *vsCode,const char *fsCode);
 MR_IMPORT("shader_unload") void mr_web_shader_unload(unsigned int id);
@@ -25,6 +28,7 @@ MR_IMPORT("unload") void mr_web_unload(unsigned int id);
 MR_IMPORT("audio_init") int mr_web_audio_init(void);
 MR_IMPORT("audio_close") void mr_web_audio_close(void);
 MR_IMPORT("audio_load") void mr_web_audio_load(unsigned int id,const void *data,unsigned int frames,unsigned int rate,unsigned int bits,unsigned int channels);
+MR_IMPORT("audio_stream_update") void mr_web_audio_stream_update(unsigned int id,const void *data,unsigned int frames,unsigned int rate,unsigned int bits,unsigned int channels);
 MR_IMPORT("audio_unload") void mr_web_audio_unload(unsigned int id);
 MR_IMPORT("audio_command") void mr_web_audio_command(unsigned int id,int command,float value);
 MR_IMPORT("audio_playing") int mr_web_audio_playing(unsigned int id);
@@ -33,8 +37,14 @@ MR_IMPORT("fps") void mr_web_fps(int fps);
 MR_IMPORT("file_size") int mr_web_file_size(const char *fileName);
 MR_IMPORT("file_read") int mr_web_file_read(const char *fileName,void *data,int size);
 MR_IMPORT("file_write") int mr_web_file_write(const char *fileName,const void *data,int size);
+MR_IMPORT("screenshot") void mr_web_screenshot(const char *fileName);
 MR_IMPORT("sin") float sinf(float x);
 MR_IMPORT("cos") float cosf(float x);
+MR_IMPORT("math_pow") float mr_web_powf(float x,float y);
+MR_IMPORT("math_log") float mr_web_logf(float x);
+MR_IMPORT("math_exp") float mr_web_expf(float x);
+MR_IMPORT("math_floor") float mr_web_floorf(float x);
+MR_IMPORT("math_ldexp") float mr_web_ldexpf(float x,int exponent);
 static float sqrtf(float x) { return __builtin_sqrtf(x); }
 /* Freestanding compiler support: no libc or WASI runtime is linked. */
 void *memset(void *destination,int value,size_t size) {
@@ -43,6 +53,12 @@ void *memset(void *destination,int value,size_t size) {
 void *memcpy(void *destination,const void *source,size_t size) {
     unsigned char *d=destination; const unsigned char *p=source;
     for (size_t i=0;i<size;i++) d[i]=p[i]; return destination;
+}
+void *memmove(void *destination,const void *source,size_t size) {
+    unsigned char *d=destination;const unsigned char *s=source;if(d<s)for(size_t i=0;i<size;i++)d[i]=s[i];else if(d>s)for(size_t i=size;i>0;i--)d[i-1]=s[i-1];return destination;
+}
+static void qsort(void *base,size_t count,size_t size,int (*compare)(const void *,const void *)) {
+    unsigned char *bytes=base;for(size_t i=1;i<count;i++)for(size_t j=i;j>0&&compare(bytes+(j-1)*size,bytes+j*size)>0;j--)for(size_t k=0;k<size;k++){unsigned char t=bytes[(j-1)*size+k];bytes[(j-1)*size+k]=bytes[j*size+k];bytes[j*size+k]=t;}
 }
 int memcmp(const void *left,const void *right,size_t size) {
     const unsigned char *a=left,*b=right;
@@ -92,13 +108,15 @@ static int puts(const char *s) { mr_log(s); return 0; }
 #define MR_MAX_3D_INSTANCES 8192
 #define MR_PI 3.14159265358979323846f
 #define MR_DEG2RAD (MR_PI/180.0f)
+static void mr_dispatch_readbacks(void);
+static void mr_discard_readbacks(void);
 typedef struct MRVertex { float x,y,u,v,z; unsigned char r,g,b,a; } MRVertex;
 typedef struct MRTexture {
 #ifdef _WIN32
     WGPUTexture texture; WGPUTextureView view; WGPUBindGroup group; WGPUSampler customSampler;
     WGPUTexture depthTexture; WGPUTextureView depthView;
 #endif
-    unsigned int id; int filter,wrap;
+    unsigned int id; int filter,wrap,width,height,mipmaps; unsigned char *pixels; bool renderTarget;
 } MRTexture;
 typedef struct MRShaderEntry {
 #ifdef _WIN32

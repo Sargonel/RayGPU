@@ -150,7 +150,8 @@
         const imports = {raygpu: {
             log: pointer => { const text = readText(pointer); console.log(text); status.textContent = text; },
             now: () => performance.now(),
-            sin: Math.sin, cos: Math.cos,
+            sin: Math.sin, cos: Math.cos, math_pow: Math.pow, math_log: Math.log,
+            math_exp: Math.exp, math_floor: Math.floor, math_ldexp: (value, exponent) => value*Math.pow(2, exponent),
             fps: fps => { targetFPS = fps; },
             audio_init: () => {
                 if (!audioContext) {
@@ -185,11 +186,18 @@
                 const gain = audioContext.createGain(), pan = audioContext.createStereoPanner();
                 gain.connect(pan); pan.connect(masterGain);
                 sounds.set(id, {buffer:decoded, source:null, gain, pan, volume:1, pitch:1,
-                    offset:0, startedAt:0, paused:false, stopping:false});
+                    offset:0, startedAt:0, paused:false, stopping:false,streaming:false,queued:new Set(),nextTime:0});
+            },
+            audio_stream_update: (id, pointer, frames, rate, bits, channels) => {
+                const sound=sounds.get(id);if(!sound||!audioContext||!frames||!channels)return;
+                const view=new DataView(wasm.memory.buffer,pointer,frames*channels*(bits/8)),decoded=audioContext.createBuffer(channels,frames,rate);
+                for(let channel=0;channel<channels;channel++){const output=decoded.getChannelData(channel);for(let frame=0;frame<frames;frame++){const sample=frame*channels+channel;output[frame]=bits===8?(view.getUint8(sample)-128)/128:bits===16?view.getInt16(sample*2,true)/32768:view.getFloat32(sample*4,true);}}
+                const source=audioContext.createBufferSource();source.buffer=decoded;source.playbackRate.value=sound.pitch;source.connect(sound.gain);const when=Math.max(audioContext.currentTime,sound.nextTime||0);sound.nextTime=when+decoded.duration/sound.pitch;sound.queued.add(source);source.onended=()=>sound.queued.delete(source);source.start(when);
             },
             audio_unload: id => {
                 const sound = sounds.get(id);
                 if (sound && sound.source) { sound.stopping=true; sound.source.stop(); }
+                if(sound)for(const source of sound.queued)source.stop();
                 sounds.delete(id);
             },
             audio_command: (id, command, value) => {
@@ -199,19 +207,22 @@
                     const source=audioContext.createBufferSource(); source.buffer=sound.buffer;
                     source.playbackRate.value=sound.pitch; source.connect(sound.gain);
                     sound.source=source; sound.startedAt=audioContext.currentTime;
+                    sound.nextTime=audioContext.currentTime+(sound.buffer.duration-Math.min(sound.offset,sound.buffer.duration))/sound.pitch;
                     sound.stopping=false; sound.paused=false;
                     source.onended=()=>{if(sound.source===source){sound.source=null;if(!sound.paused)sound.offset=0;}};
                     source.start(0,Math.min(sound.offset,sound.buffer.duration));
                 };
-                if (command === 0) { if(sound.source){sound.stopping=true;sound.source.stop();} sound.offset=0; audioContext.resume(); start(); }
-                else if (command === 1) { if(sound.source){sound.stopping=true;sound.source.stop();} sound.source=null;sound.offset=0;sound.paused=false; }
-                else if (command === 2 && sound.source) { sound.offset+=(audioContext.currentTime-sound.startedAt)*sound.pitch;sound.paused=true;sound.stopping=true;sound.source.stop();sound.source=null; }
+                if (command === 0) { if(sound.source){sound.stopping=true;sound.source.stop();} sound.offset=sound.requestedOffset === undefined ? 0 : sound.requestedOffset;delete sound.requestedOffset;audioContext.resume(); start(); }
+                else if (command === 1) { if(sound.source){sound.stopping=true;sound.source.stop();}for(const source of sound.queued)source.stop();sound.queued.clear();sound.source=null;sound.offset=0;sound.paused=false;sound.nextTime=0; }
+                else if (command === 2 && (sound.source||sound.queued.size)) { if(sound.source)sound.offset+=(audioContext.currentTime-sound.startedAt)*sound.pitch;sound.paused=true;sound.stopping=true;if(sound.source)sound.source.stop();for(const source of sound.queued)source.stop();sound.queued.clear();sound.source=null;sound.nextTime=0; }
                 else if (command === 3 && sound.paused) { audioContext.resume();start(); }
                 else if (command === 4) { sound.volume=value;sound.gain.gain.value=value; }
                 else if (command === 5 && value>0) { sound.pitch=value;if(sound.source)sound.source.playbackRate.value=value; }
                 else if (command === 6) sound.pan.pan.value=value*2-1;
+                else if (command === 8) sound.requestedOffset=Math.max(0,Math.min(value,sound.buffer.duration));
+                else if (command === 9) sound.streaming=value!==0;
             },
-            audio_playing: id => { const sound=sounds.get(id); return sound&&sound.source&&!sound.paused ? 1 : 0; },
+            audio_playing: id => { const sound=sounds.get(id);if(!sound||sound.paused)return 0;return sound.streaming?(sound.source?1:0)+sound.queued.size:(sound.source?1:0); },
             file_size: name => { const data = loadFile(name); return data ? data.length : 0; },
             file_read: (name, destination, size) => {
                 const data = loadFile(name);
@@ -233,6 +244,10 @@
                 setTimeout(() => URL.revokeObjectURL(url), 0);
                 return 1;
             },
+            screenshot: namePointer => {
+                const name=(readText(namePointer)||"screenshot.png").split(/[\\/]/).pop();
+                canvas.toBlob(blob=>{if(!blob)return;const url=URL.createObjectURL(blob),link=document.createElement("a");link.href=url;link.download=name;link.click();setTimeout(()=>URL.revokeObjectURL(url),1000);},"image/png");
+            },
             init: (width, height, title) => {
                 canvas.width = width; canvas.height = height;
                 document.title = readText(title);
@@ -252,6 +267,25 @@
                     {binding: 0, resource: sampler}, {binding: 1, resource: view}
                 ]});
                 textures.set(id, {texture, view, group, sampler, width, height});
+            },
+            texture_mipmaps: (id, pointer, width, height, mipmaps) => {
+                const previous=textures.get(id);if(previous)previous.texture.destroy();
+                const texture=device.createTexture({size:[width,height],mipLevelCount:mipmaps,format:"rgba8unorm",usage:GPUTextureUsage.TEXTURE_BINDING|GPUTextureUsage.COPY_DST|GPUTextureUsage.COPY_SRC});
+                let offset=0,w=width,h=height;for(let level=0;level<mipmaps;level++){
+                    const bytes=w*h*4;device.queue.writeTexture({texture,mipLevel:level},new Uint8Array(wasm.memory.buffer,pointer+offset,bytes),{bytesPerRow:w*4,rowsPerImage:h},[w,h,1]);offset+=bytes;w=Math.max(1,w>>1);h=Math.max(1,h>>1);
+                }
+                const view=texture.createView(),selectedSampler=previous?previous.sampler:sampler;
+                const group=device.createBindGroup({layout:textureLayout,entries:[{binding:0,resource:selectedSampler},{binding:1,resource:view}]});textures.set(id,{texture,view,group,sampler:selectedSampler,width,height});
+            },
+            texture_readback: (id, requestId) => {
+                const entry=textures.get(id);if(!entry||!entry.texture)return 0;
+                const rowBytes=entry.width*4,paddedRow=(rowBytes+255)&~255,size=paddedRow*entry.height;
+                const buffer=device.createBuffer({size,usage:GPUBufferUsage.COPY_DST|GPUBufferUsage.MAP_READ});
+                const encoder=device.createCommandEncoder();encoder.copyTextureToBuffer({texture:entry.texture},{buffer,bytesPerRow:paddedRow,rowsPerImage:entry.height},[entry.width,entry.height,1]);device.queue.submit([encoder.finish()]);
+                buffer.mapAsync(GPUMapMode.READ).then(()=>{const destination=wasm.raygpu_readback_allocate(requestId,rowBytes*entry.height);if(destination){const source=new Uint8Array(buffer.getMappedRange()),output=new Uint8Array(wasm.memory.buffer,destination,rowBytes*entry.height);for(let y=0;y<entry.height;y++)output.set(source.subarray(y*paddedRow,y*paddedRow+rowBytes),y*rowBytes);if(format.startsWith("bgra"))for(let i=0;i<entry.width*entry.height;i++){const at=i*4,value=output[at];output[at]=output[at+2];output[at+2]=value;}buffer.unmap();buffer.destroy();wasm.raygpu_readback_complete(requestId,destination,entry.width,entry.height);}else{buffer.unmap();buffer.destroy();wasm.raygpu_readback_complete(requestId,0,0,0);}}).catch(()=>{buffer.destroy();wasm.raygpu_readback_complete(requestId,0,0,0);});return 1;
+            },
+            screen_readback: requestId => {
+                createImageBitmap(canvas).then(bitmap=>{const copy=typeof OffscreenCanvas!=="undefined"?new OffscreenCanvas(canvas.width,canvas.height):document.createElement("canvas");copy.width=canvas.width;copy.height=canvas.height;const ctx=copy.getContext("2d");ctx.drawImage(bitmap,0,0);bitmap.close();const pixels=ctx.getImageData(0,0,canvas.width,canvas.height).data,destination=wasm.raygpu_readback_allocate(requestId,pixels.length);if(destination)new Uint8Array(wasm.memory.buffer,destination,pixels.length).set(pixels);wasm.raygpu_readback_complete(requestId,destination||0,destination?canvas.width:0,destination?canvas.height:0);}).catch(()=>wasm.raygpu_readback_complete(requestId,0,0,0));return 1;
             },
             render_texture: (id, width, height) => {
                 const texture=device.createTexture({size:[width,height],format,

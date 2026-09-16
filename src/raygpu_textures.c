@@ -1,4 +1,6 @@
 /* RayGPU textures module. Compiled through raygpu.c; do not compile separately. */
+static Image mr_load_qoi(const unsigned char *data,int size);
+static Image mr_load_dds(const unsigned char *data,int size);
 #ifdef __INTELLISENSE__
 /* IntelliSense can lose preprocessor state inside stb_image's deeply nested
  * implementation and then report false missing-#endif errors for this file.
@@ -39,7 +41,9 @@ unsigned char *stbi_load_gif_from_memory(const unsigned char *buffer,int length,
 #endif /* __INTELLISENSE__ */
 
 Image LoadImageFromMemory(const char *fileType,const unsigned char *fileData,int dataSize) {
-    (void)fileType; if (!fileData || dataSize<=0) return (Image){0};
+    if (!fileType || !fileData || dataSize<=0) return (Image){0};
+    if(IsFileExtension(fileType,".qoi"))return mr_load_qoi(fileData,dataSize);
+    if(IsFileExtension(fileType,".dds"))return mr_load_dds(fileData,dataSize);
     int width=0,height=0,channels=0;
     unsigned char *decoded=stbi_load_from_memory(fileData,dataSize,&width,&height,&channels,4);
     if (!decoded || width<=0 || height<=0) return (Image){0};
@@ -315,7 +319,7 @@ RenderTexture2D LoadRenderTexture(int width,int height) {
 #else
     mr_web_render_texture(id,width,height);
 #endif
-    entry->id=id; Texture2D texture={id,width,height,1,7}; return (RenderTexture2D){id,texture,{0}};
+    entry->id=id;entry->width=width;entry->height=height;entry->mipmaps=1;entry->renderTarget=true; Texture2D texture={id,width,height,1,7}; return (RenderTexture2D){id,texture,{0}};
 }
 bool IsRenderTextureValid(RenderTexture2D target) { return target.id!=0 && target.id==target.texture.id && IsTextureValid(target.texture); }
 void UnloadRenderTexture(RenderTexture2D target) { if (mr.renderTarget==target.id) EndTextureMode(); UnloadTexture(target.texture); }
