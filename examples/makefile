@@ -9,15 +9,15 @@ WEB_FLAGS = --target=wasm32 -ffreestanding -nostdlib -Wl,--no-entry -Wl,--export
 .PHONY: native web run server clean
 
 native:
-	$(CC) $(CFLAGS) $(NATIVE_FLAGS) main.c snake.c basic_3d.c ../src/raygpu.c $(NATIVE_LIBS) -o examples.exe
+	$(CC) $(CFLAGS) $(NATIVE_FLAGS) main.c snake.c basic_3d.c ../src/sargpu.c $(NATIVE_LIBS) -o examples.exe
 	powershell -NoProfile -Command "Copy-Item -LiteralPath (Join-Path $$env:SystemRoot 'System32/d3dcompiler_47.dll') -Destination 'd3dcompiler_47.dll' -Force"
 
 web:
 	cmd /C "if not exist ..\build\web mkdir ..\build\web"
 	cmd /C "if not exist ..\build\web\examples\assets mkdir ..\build\web\examples\assets"
-	$(CC) $(CFLAGS) $(WEB_FLAGS) main.c snake.c basic_3d.c ../src/raygpu.c -o ../build/web/main.wasm
+	$(CC) $(CFLAGS) $(WEB_FLAGS) main.c snake.c basic_3d.c ../src/sargpu.c -o ../build/web/main.wasm
 	powershell -NoProfile -Command "Copy-Item -LiteralPath '../shell.html' -Destination '../build/web/index.html' -Force"
-	powershell -NoProfile -Command "Copy-Item -LiteralPath '../src/raygpu.js' -Destination '../build/web/raygpu.js' -Force"
+	powershell -NoProfile -Command "Copy-Item -LiteralPath '../src/sargpu.js' -Destination '../build/web/sargpu.js' -Force"
 	powershell -NoProfile -Command "Copy-Item -Path 'assets/*' -Destination '../build/web/examples/assets' -Recurse -Force"
 	powershell -NoProfile -Command "if (Test-Path '../assets') { Copy-Item -Path '../assets' -Destination '../build/web' -Recurse -Force }"
 

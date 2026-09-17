@@ -1,4 +1,4 @@
-/* RayGPU models module. Compiled through raygpu.c; do not compile separately. */
+/* SarGPU models module. Compiled through sargpu.c; do not compile separately. */
 static Vector3 mr_v3_add(Vector3 a,Vector3 b){return(Vector3){a.x+b.x,a.y+b.y,a.z+b.z};}
 static Vector3 mr_v3_sub(Vector3 a,Vector3 b){return(Vector3){a.x-b.x,a.y-b.y,a.z-b.z};}
 static Vector3 mr_v3_scale(Vector3 a,float s){return(Vector3){a.x*s,a.y*s,a.z*s};}
@@ -43,8 +43,8 @@ Light3D CreateLight3D(int type,Vector3 position,Vector3 target,Color color,float
     if(type<LIGHT_DIRECTIONAL||type>LIGHT_SPOT)type=LIGHT_POINT;if(intensity<0)intensity=0;if(range<0)range=0;
     return(Light3D){true,type,position,target,color,intensity,range,0.9f,0.8f};
 }
-void SetLight3D(int index,Light3D light){if(index<0||index>=RAYGPU_MAX_LIGHTS)return;if(light.type<LIGHT_DIRECTIONAL||light.type>LIGHT_SPOT)light.type=LIGHT_POINT;if(light.intensity<0)light.intensity=0;if(light.range<0)light.range=0;mr.lights[index]=light;}
-Light3D GetLight3D(int index){return index>=0&&index<RAYGPU_MAX_LIGHTS?mr.lights[index]:(Light3D){0};}
+void SetLight3D(int index,Light3D light){if(index<0||index>=SARGPU_MAX_LIGHTS)return;if(light.type<LIGHT_DIRECTIONAL||light.type>LIGHT_SPOT)light.type=LIGHT_POINT;if(light.intensity<0)light.intensity=0;if(light.range<0)light.range=0;mr.lights[index]=light;}
+Light3D GetLight3D(int index){return index>=0&&index<SARGPU_MAX_LIGHTS?mr.lights[index]:(Light3D){0};}
 void SetAmbientLight(Color color,float intensity){mr.ambientColor=color;mr.ambientIntensity=intensity<0?0:intensity;}
 void SetFog(int mode,Color color,float start,float end,float density){if(mode<FOG_DISABLED||mode>FOG_EXPONENTIAL_SQUARED)mode=FOG_DISABLED;if(start<0)start=0;if(end<=start)end=start+0.001f;if(density<0)density=0;mr.fogMode=mode;mr.fogColor=color;mr.fogStart=start;mr.fogEnd=end;mr.fogDensity=density;}
 void DisableFog(void){mr.fogMode=FOG_DISABLED;}
@@ -176,7 +176,7 @@ static void mr_update_mesh_vertices(Mesh mesh){MRMeshEntry *entry=mr_mesh_entry(
 #endif
     MemFree(packed);
 }
-void UploadMesh(Mesh *mesh,bool dynamic){(void)dynamic;if(!mesh||!mesh->vertices||mesh->vertexCount<=0||!mr.ready)return;MRMeshEntry *entry=mr_mesh_entry(mesh->vaoId);if(!entry)for(int i=0;i<MR_MAX_MESHES;i++)if(!mr.meshes[i].id){entry=&mr.meshes[i];entry->id=++mr.nextMesh;if(!entry->id)entry->id=++mr.nextMesh;mesh->vaoId=entry->id;break;}if(!entry){puts("raygpu: mesh limit reached");return;}if(!mesh->vboId){mesh->vboId=MemAlloc(9*sizeof(unsigned int));if(mesh->vboId)for(int i=0;i<9;i++)mesh->vboId[i]=entry->id;}mr_upload_mesh_data(*mesh,entry);}
+void UploadMesh(Mesh *mesh,bool dynamic){(void)dynamic;if(!mesh||!mesh->vertices||mesh->vertexCount<=0||!mr.ready)return;MRMeshEntry *entry=mr_mesh_entry(mesh->vaoId);if(!entry)for(int i=0;i<MR_MAX_MESHES;i++)if(!mr.meshes[i].id){entry=&mr.meshes[i];entry->id=++mr.nextMesh;if(!entry->id)entry->id=++mr.nextMesh;mesh->vaoId=entry->id;break;}if(!entry){puts("sargpu: mesh limit reached");return;}if(!mesh->vboId){mesh->vboId=MemAlloc(9*sizeof(unsigned int));if(mesh->vboId)for(int i=0;i<9;i++)mesh->vboId[i]=entry->id;}mr_upload_mesh_data(*mesh,entry);}
 void UpdateMeshBuffer(Mesh mesh,int index,const void *data,int dataSize,int offset){if(!data||dataSize<=0||offset<0)return;void *target=NULL;int capacity=0;if(index==0){target=mesh.animVertices?mesh.animVertices:mesh.vertices;capacity=mesh.vertexCount*3*(int)sizeof(float);}else if(index==1){target=mesh.texcoords;capacity=mesh.vertexCount*2*(int)sizeof(float);}else if(index==2){target=mesh.animNormals?mesh.animNormals:mesh.normals;capacity=mesh.vertexCount*3*(int)sizeof(float);}else if(index==3){target=mesh.colors;capacity=mesh.vertexCount*4;}else if(index==4){target=mesh.tangents;capacity=mesh.vertexCount*4*(int)sizeof(float);}else if(index==5){target=mesh.texcoords2;capacity=mesh.vertexCount*2*(int)sizeof(float);}else if(index==6){target=mesh.indices;capacity=mesh.triangleCount*3*(int)sizeof(unsigned short);}if(target&&offset+dataSize<=capacity){memcpy((unsigned char*)target+offset,data,(size_t)dataSize);MRMeshEntry *entry=mr_mesh_entry(mesh.vaoId);if(entry){if(index==6)mr_upload_mesh_data(mesh,entry);else mr_update_mesh_vertices(mesh);}}}
 void UnloadMesh(Mesh mesh){MRMeshEntry *entry=mr_mesh_entry(mesh.vaoId);if(entry){
 #ifdef _WIN32
@@ -204,7 +204,7 @@ static void mr_prepare_scene3d(int width,int height){
     mr.scene3d.fogParams=(Vector4){(float)mr.fogMode,mr.fogStart,mr.fogEnd,mr.fogDensity};
     mr.scene3d.skyRight=(Vector4){right.x,right.y,right.z,aspect};mr.scene3d.skyUp=(Vector4){up.x,up.y,up.z,tangent};
     mr.scene3d.skyForward=(Vector4){forward.x,forward.y,forward.z,(float)mr.camera3d.projection};
-    int lightCount=0;for(int i=0;i<RAYGPU_MAX_LIGHTS;i++){Light3D light=mr.lights[i];if(light.enabled)lightCount++;Vector3 direction=mr_v3_norm(mr_v3_sub(light.target,light.position));MRLightGPU *gpu=&mr.scene3d.lights[i];gpu->positionType=(Vector4){light.position.x,light.position.y,light.position.z,(float)light.type};gpu->directionRange=(Vector4){direction.x,direction.y,direction.z,light.range};gpu->colorIntensity=(Vector4){light.color.r/255.0f,light.color.g/255.0f,light.color.b/255.0f,light.intensity};gpu->spotEnabled=(Vector4){light.innerCutoff,light.outerCutoff,light.enabled?1.0f:0.0f,0};}
+    int lightCount=0;for(int i=0;i<SARGPU_MAX_LIGHTS;i++){Light3D light=mr.lights[i];if(light.enabled)lightCount++;Vector3 direction=mr_v3_norm(mr_v3_sub(light.target,light.position));MRLightGPU *gpu=&mr.scene3d.lights[i];gpu->positionType=(Vector4){light.position.x,light.position.y,light.position.z,(float)light.type};gpu->directionRange=(Vector4){direction.x,direction.y,direction.z,light.range};gpu->colorIntensity=(Vector4){light.color.r/255.0f,light.color.g/255.0f,light.color.b/255.0f,light.intensity};gpu->spotEnabled=(Vector4){light.innerCutoff,light.outerCutoff,light.enabled?1.0f:0.0f,0};}
     (void)lightCount;mr.scene3d.settings=(Vector4){mr.pbrEnabled?1.0f:0.0f,mr.skyboxTint.r/255.0f,mr.skyboxTint.g/255.0f,mr.skyboxTint.b/255.0f};
 }
 static void mr_queue_mesh_instances(Mesh mesh,Material material,const Matrix *transforms,int count){
@@ -212,8 +212,8 @@ static void mr_queue_mesh_instances(Mesh mesh,Material material,const Matrix *tr
     if(mr.instanceCount3d>=MR_MAX_3D_INSTANCES||mr.drawCount3d>=MR_MAX_3D_DRAWS)return;
     if(count>MR_MAX_3D_INSTANCES-(int)mr.instanceCount3d)count=MR_MAX_3D_INSTANCES-(int)mr.instanceCount3d;
     MRShaderEntry *shader=mr_shader(material.shader.id);unsigned int shaderId=shader&&shader->materialShader?shader->id:0;
-    unsigned int textures[RAYGPU_MAX_SHADER_TEXTURES],flags=0;Color tint=WHITE,emission=BLACK;
-    for(int slot=0;slot<RAYGPU_MAX_SHADER_TEXTURES;slot++){
+    unsigned int textures[SARGPU_MAX_SHADER_TEXTURES],flags=0;Color tint=WHITE,emission=BLACK;
+    for(int slot=0;slot<SARGPU_MAX_SHADER_TEXTURES;slot++){
         unsigned int id=mr.white;if(material.maps&&slot<11&&IsTextureValid(material.maps[slot].texture)){id=material.maps[slot].texture.id;flags|=1u<<slot;}
         else if(shader&&shader->extraTextures[slot]&&mr_texture(shader->extraTextures[slot]))id=shader->extraTextures[slot];textures[slot]=id;
     }
@@ -341,7 +341,7 @@ static void mr_text_float(MRTextBuilder *builder,float value){
 }
 static bool mr_text_save(MRTextBuilder *builder,const char *fileName){bool result=!builder->failed&&builder->data&&SaveFileData(fileName,builder->data,builder->length);MemFree(builder->data);builder->data=NULL;return result;}
 bool ExportMesh(Mesh mesh,const char *fileName){
-    if(!fileName||!mesh.vertices||mesh.vertexCount<=0||mesh.triangleCount<=0||!IsFileExtension(fileName,".obj"))return false;MRTextBuilder out={0};mr_text_append(&out,"# Exported by RayGPU\n");
+    if(!fileName||!mesh.vertices||mesh.vertexCount<=0||mesh.triangleCount<=0||!IsFileExtension(fileName,".obj"))return false;MRTextBuilder out={0};mr_text_append(&out,"# Exported by SarGPU\n");
     for(int i=0;i<mesh.vertexCount;i++){mr_text_append(&out,"v ");for(int c=0;c<3;c++){if(c)mr_text_append(&out," ");mr_text_float(&out,mesh.vertices[i*3+c]);}mr_text_append(&out,"\n");}
     if(mesh.texcoords)for(int i=0;i<mesh.vertexCount;i++){mr_text_append(&out,"vt ");mr_text_float(&out,mesh.texcoords[i*2]);mr_text_append(&out," ");mr_text_float(&out,1.0f-mesh.texcoords[i*2+1]);mr_text_append(&out,"\n");}
     if(mesh.normals)for(int i=0;i<mesh.vertexCount;i++){mr_text_append(&out,"vn ");for(int c=0;c<3;c++){if(c)mr_text_append(&out," ");mr_text_float(&out,mesh.normals[i*3+c]);}mr_text_append(&out,"\n");}
@@ -349,7 +349,7 @@ bool ExportMesh(Mesh mesh,const char *fileName){
     return mr_text_save(&out,fileName);
 }
 bool ExportMeshAsCode(Mesh mesh,const char *fileName){
-    if(!fileName||!mesh.vertices||mesh.vertexCount<=0)return false;MRTextBuilder out={0};mr_text_append(&out,"/* Mesh exported by RayGPU */\n#pragma once\n\n#define MESH_VERTEX_COUNT ");mr_text_integer(&out,mesh.vertexCount);mr_text_append(&out,"\n#define MESH_TRIANGLE_COUNT ");mr_text_integer(&out,mesh.triangleCount);mr_text_append(&out,"\n\nstatic const float meshVertices[] = {");
+    if(!fileName||!mesh.vertices||mesh.vertexCount<=0)return false;MRTextBuilder out={0};mr_text_append(&out,"/* Mesh exported by SarGPU */\n#pragma once\n\n#define MESH_VERTEX_COUNT ");mr_text_integer(&out,mesh.vertexCount);mr_text_append(&out,"\n#define MESH_TRIANGLE_COUNT ");mr_text_integer(&out,mesh.triangleCount);mr_text_append(&out,"\n\nstatic const float meshVertices[] = {");
     for(int i=0;i<mesh.vertexCount*3;i++){if(i)mr_text_append(&out,",");if(i%9==0)mr_text_append(&out,"\n    ");mr_text_float(&out,mesh.vertices[i]);mr_text_append(&out,"f");}mr_text_append(&out,"\n};\n");
     if(mesh.texcoords){mr_text_append(&out,"\nstatic const float meshTexcoords[] = {");for(int i=0;i<mesh.vertexCount*2;i++){if(i)mr_text_append(&out,",");if(i%8==0)mr_text_append(&out,"\n    ");mr_text_float(&out,mesh.texcoords[i]);mr_text_append(&out,"f");}mr_text_append(&out,"\n};\n");}
     if(mesh.normals){mr_text_append(&out,"\nstatic const float meshNormals[] = {");for(int i=0;i<mesh.vertexCount*3;i++){if(i)mr_text_append(&out,",");if(i%9==0)mr_text_append(&out,"\n    ");mr_text_float(&out,mesh.normals[i]);mr_text_append(&out,"f");}mr_text_append(&out,"\n};\n");}
@@ -425,7 +425,7 @@ static bool mr_gltf_open(const char *fileName,MRGltfDoc *doc){
     int capacity=doc->jsonLength/2+128;doc->tokens=MemAlloc((unsigned int)capacity*sizeof(MRJsonToken));
     doc->tokenCount=doc->tokens?mr_json_tokenize(doc->json,doc->jsonLength,doc->tokens,capacity):-1;
     if(doc->tokenCount<=0||doc->tokens[0].type!=MR_JSON_OBJECT)goto fail;doc->rootToken=&doc->tokens[0];
-    int required=mr_json_get(doc->json,doc->tokens,doc->tokenCount,0,"extensionsRequired");for(int i=0;i<mr_json_count(doc->tokens,doc->tokenCount,required);i++){int t=mr_json_at(doc->tokens,doc->tokenCount,required,i);if(t>=0&&mr_json_equal(doc->json,doc->tokens[t],"KHR_draco_mesh_compression")){puts("raygpu: required Draco mesh compression is not supported");goto fail;}}
+    int required=mr_json_get(doc->json,doc->tokens,doc->tokenCount,0,"extensionsRequired");for(int i=0;i<mr_json_count(doc->tokens,doc->tokenCount,required);i++){int t=mr_json_at(doc->tokens,doc->tokenCount,required,i);if(t>=0&&mr_json_equal(doc->json,doc->tokens[t],"KHR_draco_mesh_compression")){puts("sargpu: required Draco mesh compression is not supported");goto fail;}}
     int buffers=mr_json_get(doc->json,doc->tokens,doc->tokenCount,0,"buffers");doc->bufferCount=mr_json_count(doc->tokens,doc->tokenCount,buffers);
     if(doc->bufferCount<1&&doc->glbBin)doc->bufferCount=1;
     doc->buffers=MemAlloc((unsigned int)doc->bufferCount*sizeof(MRGltfBuffer));if(doc->bufferCount&&!doc->buffers)goto fail;
@@ -675,7 +675,7 @@ Model LoadModelFromScene(const char *fileName,int sceneIndex){
     if(IsFileExtension(fileName,".iqm"))return mr_load_iqm(fileName);
     if(IsFileExtension(fileName,".vox"))return mr_load_vox(fileName);
     if(IsFileExtension(fileName,".m3d"))return mr_load_m3d(fileName);
-    Model model={0};MRGltfDoc doc;if(!mr_gltf_open(fileName,&doc)){puts("raygpu: could not load glTF 2.0 model");return model;}if(!mr_gltf_select_scene(&doc,sceneIndex)){mr_gltf_close(&doc);return model;}int nodes=mr_json_get(doc.json,doc.tokens,doc.tokenCount,0,"nodes"),nodeCount=mr_json_count(doc.tokens,doc.tokenCount,nodes),meshes=mr_json_get(doc.json,doc.tokens,doc.tokenCount,0,"meshes"),meshCount=mr_json_count(doc.tokens,doc.tokenCount,meshes),primitiveCount=0;
+    Model model={0};MRGltfDoc doc;if(!mr_gltf_open(fileName,&doc)){puts("sargpu: could not load glTF 2.0 model");return model;}if(!mr_gltf_select_scene(&doc,sceneIndex)){mr_gltf_close(&doc);return model;}int nodes=mr_json_get(doc.json,doc.tokens,doc.tokenCount,0,"nodes"),nodeCount=mr_json_count(doc.tokens,doc.tokenCount,nodes),meshes=mr_json_get(doc.json,doc.tokens,doc.tokenCount,0,"meshes"),meshCount=mr_json_count(doc.tokens,doc.tokenCount,meshes),primitiveCount=0;
     if(nodeCount>0){for(int i=0;i<nodeCount;i++){if(!doc.sceneNodes[i])continue;int node=mr_json_at(doc.tokens,doc.tokenCount,nodes,i),meshToken=mr_json_get(doc.json,doc.tokens,doc.tokenCount,node,"mesh");if(meshToken<0)continue;int mesh=mr_json_at(doc.tokens,doc.tokenCount,meshes,mr_json_int(doc.json,doc.tokens[meshToken])),primitives=mr_json_get(doc.json,doc.tokens,doc.tokenCount,mesh,"primitives"),n=mr_json_count(doc.tokens,doc.tokenCount,primitives);for(int p=0;p<n;p++){int primitive=mr_json_at(doc.tokens,doc.tokenCount,primitives,p),mode=mr_json_get(doc.json,doc.tokens,doc.tokenCount,primitive,"mode");if(mode<0||mr_json_int(doc.json,doc.tokens[mode])==4)primitiveCount++;}}}
     else for(int i=0;i<meshCount;i++){int mesh=mr_json_at(doc.tokens,doc.tokenCount,meshes,i),primitives=mr_json_get(doc.json,doc.tokens,doc.tokenCount,mesh,"primitives");primitiveCount+=mr_json_count(doc.tokens,doc.tokenCount,primitives);}if(primitiveCount<=0){mr_gltf_close(&doc);return model;}
     int materials=mr_json_get(doc.json,doc.tokens,doc.tokenCount,0,"materials"),sourceMaterials=mr_json_count(doc.tokens,doc.tokenCount,materials);model.transform=mr_matrix_identity();model.meshCount=primitiveCount;model.materialCount=sourceMaterials+1;model.meshes=MemAlloc((unsigned int)primitiveCount*sizeof(Mesh));model.meshMaterial=MemAlloc((unsigned int)primitiveCount*sizeof(int));model.materials=MemAlloc((unsigned int)model.materialCount*sizeof(Material));if(model.meshes)memset(model.meshes,0,(size_t)primitiveCount*sizeof(Mesh));if(model.materials)memset(model.materials,0,(size_t)model.materialCount*sizeof(Material));if(!model.meshes||!model.meshMaterial||!model.materials){mr_gltf_close(&doc);UnloadModel(model);return(Model){0};}memset(model.meshes,0,(size_t)primitiveCount*sizeof(Mesh));memset(model.meshMaterial,0,(size_t)primitiveCount*sizeof(int));for(int i=0;i<model.materialCount;i++)model.materials[i]=LoadMaterialDefault();for(int i=0;i<sourceMaterials;i++)mr_gltf_material(&doc,mr_json_at(doc.tokens,doc.tokenCount,materials,i),&model.materials[i+1]);

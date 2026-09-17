@@ -1,4 +1,4 @@
-/* RayGPU model importers. Compiled through raygpu.c.
+/* SarGPU model importers. Compiled through sargpu.c.
  * Copyright (c) 2026 Sargonel. Distributed under the MIT license. */
 /* Portable C17 limits also avoid Windows SDK integer suffixes in IntelliSense. */
 #define MR_FMT_UINT32_MAX 4294967295u
@@ -163,7 +163,7 @@ static Model mr_load_obj(const char *fileName){
             char *tokens[4]={0};int n=0;while(n<4&&(tokens[n]=mr_fmt_token(&end)))n++;if(n>=3)colors[np]=(Color){mr_byte((float)mr_fmt_number(tokens[0],NULL)*255),mr_byte((float)mr_fmt_number(tokens[1],NULL)*255),mr_byte((float)mr_fmt_number(tokens[2],NULL)*255),255};np++;
         }else if(TextIsEqual(key,"vn")){if(!mr_fmt_grow((void**)&normals,&cn,nn+1,sizeof(Vector3))){ok=false;break;}char *end=args;float x=(float)mr_fmt_number(end,&end),y=(float)mr_fmt_number(end,&end),z=(float)mr_fmt_number(end,&end);normals[nn++]=(Vector3){x,y,z};}
         else if(TextIsEqual(key,"vt")){if(!mr_fmt_grow((void**)&uvs,&cu,nu+1,sizeof(Vector2))){ok=false;break;}char *end=args;float u=(float)mr_fmt_number(end,&end),v=(float)mr_fmt_number(end,&end);uvs[nu++]=(Vector2){u,1-v};}
-        else if(TextIsEqual(key,"mtllib")){char *name;while((name=mr_fmt_token(&args))){char path[2048];mr_join_path(path,sizeof path,directory,name);if(!mr_fmt_mtl(path,&materials))puts("raygpu: OBJ material library missing or invalid; using defaults");}}
+        else if(TextIsEqual(key,"mtllib")){char *name;while((name=mr_fmt_token(&args))){char path[2048];mr_join_path(path,sizeof path,directory,name);if(!mr_fmt_mtl(path,&materials))puts("sargpu: OBJ material library missing or invalid; using defaults");}}
         else if(TextIsEqual(key,"usemtl")){char *name=mr_fmt_trim(args);current=mr_fmt_material_find(&materials,name);if(current<0)current=0;}
         else if(TextIsEqual(key,"o")||TextIsEqual(key,"g")){if(geometry.group==MR_FMT_INT32_MAX){ok=false;break;}geometry.group++;}
         else if(TextIsEqual(key,"f")){int count=0;char *token;while((token=mr_fmt_token(&args))){MRFormatObjIndex index;if(!mr_fmt_obj_index(token,np,nu,nn,&index)||!mr_fmt_grow((void**)&polygon,&polygonCap,count+1,sizeof *polygon)){ok=false;break;}
@@ -276,7 +276,7 @@ static Model mr_load_vox(const char *fileName){
     if(geometry.count){Material *materials=mr_fmt_alloc(1,sizeof(Material));if(!materials)goto done;materials[0]=LoadMaterialDefault();model=mr_fmt_model(&geometry,materials,1,0);ok=true;}
 done:MemFree(grid);MemFree(geometry.triangles);UnloadFileData(data);if(!ok)UnloadModel(model);return ok?model:(Model){0};
 }
-/* Model3D SDK integration. Keep all allocation and file access in RayGPU. */
+/* Model3D SDK integration. Keep all allocation and file access in SarGPU. */
 static size_t mr_fmt_strlen(const char *s){size_t n=0;while(s[n])n++;return n;}
 static int mr_fmt_strcmp(const char *a,const char *b){while(*a&&*a==*b){a++;b++;}return(unsigned char)*a-(unsigned char)*b;}
 static char *mr_fmt_strrchr(const char *s,int c){const char *last=NULL;do{if(*s==c)last=s;}while(*s++);return(char*)last;}

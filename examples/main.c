@@ -54,7 +54,7 @@ static void CloseExample(void)
     if (currentScreen == EXAMPLE_SNAKE) SnakeShutdown();
     else if (currentScreen == EXAMPLE_BASIC_3D) Basic3DShutdown();
     currentScreen = EXAMPLE_CATALOG;
-    SetWindowTitle("RayGPU Examples");
+    SetWindowTitle("SarGPU Examples");
 }
 
 static void DrawCard(Rectangle card, const char *number, const char *title,
@@ -89,7 +89,7 @@ static void DrawCatalog(void)
         ClearBackground((Color){8, 13, 23, 255});
         DrawRectangleGradientV(0, 0, SCREEN_WIDTH, SCREEN_HEIGHT,
             (Color){18, 35, 60, 255}, (Color){5, 9, 17, 255});
-        DrawFittedText("RAYGPU EXAMPLES", 150, 100, 64, SCREEN_WIDTH - 300, RAYWHITE);
+        DrawFittedText("SARGPU EXAMPLES", 150, 100, 64, SCREEN_WIDTH - 300, RAYWHITE);
         DrawFittedText("Choose a demo. Everything runs inside this one application.",
             154, 185, 28, SCREEN_WIDTH - 308, LIGHTGRAY);
 
@@ -120,7 +120,7 @@ static void AppFrame(void)
 
 int main(void)
 {
-    InitWindow(SCREEN_WIDTH, SCREEN_HEIGHT, "RayGPU Examples");
+    InitWindow(SCREEN_WIDTH, SCREEN_HEIGHT, "SarGPU Examples");
     if (!IsWindowReady()) return 1;
 
     SetWindowMinSize(1280, 720);
@@ -128,5 +128,5 @@ int main(void)
     SetTargetFPS(120);
     InitAudioDevice();
     RunMainLoop(AppFrame);
-    return RayGPUHadError() ? 1 : 0;
+    return SarGPUHadError() ? 1 : 0;
 }

@@ -1,4 +1,4 @@
-/* RayGPU modification: fix GIF disposal-3 history pointer and check frame-buffer overflow.
+/* SarGPU modification: fix GIF disposal-3 history pointer and check frame-buffer overflow.
  * Original license notices remain below. */
 /* stb_image - v2.30 - public domain image loader - http://nothings.org/stb
                                   no warranty implied; use at your own risk
@@ -385,7 +385,7 @@ enum
    STBI_rgb_alpha  = 4
 };
 
-/* RayGPU provides allocation. */
+/* SarGPU provides allocation. */
 typedef unsigned char stbi_uc;
 typedef unsigned short stbi_us;
 
@@ -588,8 +588,8 @@ STBIDEF int   stbi_zlib_decode_noheader_buffer(char *obuffer, int olen, const ch
 
 #include <stdarg.h>
 #include <stddef.h> // ptrdiff_t on osx
-/* RayGPU provides allocation. */
-/* RayGPU provides memory functions. */
+/* SarGPU provides allocation. */
+/* SarGPU provides memory functions. */
 #include <limits.h>
 
 #if !defined(STBI_NO_LINEAR) || !defined(STBI_NO_HDR)

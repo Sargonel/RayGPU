@@ -10,7 +10,7 @@ $mimeTypes = @{
 }
 $resolvedWebRoot = [System.IO.Path]::GetFullPath($webRoot).TrimEnd([System.IO.Path]::DirectorySeparatorChar)
 $listener.Start()
-Write-Host "raygpu: http://127.0.0.1:$Port (Ctrl+C to stop)"
+Write-Host "sargpu: http://127.0.0.1:$Port (Ctrl+C to stop)"
 $script:stopServer = $false
 $consoleInput = -not [Console]::IsInputRedirected
 $previousControlC = $false

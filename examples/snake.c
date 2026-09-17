@@ -1,4 +1,4 @@
-/* Snake scene used by the single RayGPU example catalog. */
+/* Snake scene used by the single SarGPU example catalog. */
 #include "examples.h"
 
 #define SCREEN_WIDTH 1920
@@ -186,7 +186,7 @@ void SnakeUpdate(void)
     BeginDrawing();
         DrawRectangleGradientV(0, 0, SCREEN_WIDTH, SCREEN_HEIGHT,
             (Color){ 12, 22, 42, 255 }, (Color){ 3, 7, 15, 255 });
-        GameText("RAYGPU", 48, 40, 50, (Color){ 90, 255, 185, 255 });
+        GameText("SARGPU", 48, 40, 50, (Color){ 90, 255, 185, 255 });
         GameText("SNAKE", 48, 96, 50, (Color){ 90, 255, 185, 255 });
         GameText("WASD / ARROWS", 48, 180, 22, LIGHTGRAY);
         GameText("P  PAUSE", 48, 214, 22, LIGHTGRAY);
@@ -221,13 +221,13 @@ void SnakeUpdate(void)
 
 void SnakeInit(void)
 {
-    SetWindowTitle("RayGPU Examples - Snake");
+    SetWindowTitle("SarGPU Examples - Snake");
     SetRandomSeed((unsigned int)(GetTime()*1000000.0) + 0x51A9u);
 
     board = LoadRenderTexture(BOARD_WIDTH, BOARD_HEIGHT);
     screenShader = LoadShaderFromMemory(0,
-        "// @raygpu_uniform tint 0\n"
-        "// @raygpu_uniform time 1\n"
+        "// @sargpu_uniform tint 0\n"
+        "// @sargpu_uniform time 1\n"
         "struct V { @builtin(position) position: vec4f, @location(0) uv: vec2f, @location(1) color: vec4f };"
         "struct Uniforms { values: array<vec4f, 128> };"
         "@group(0) @binding(0) var smp: sampler; @group(0) @binding(1) var tex: texture_2d<f32>;"

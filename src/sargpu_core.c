@@ -1,4 +1,4 @@
-/* RayGPU core module. Compiled through raygpu.c; do not compile separately. */
+/* SarGPU core module. Compiled through sargpu.c; do not compile separately. */
 static unsigned int mr_config_flags;
 static void mr_error(const char *s) { puts(s); mr.error=true; mr.close=true; }
 static void mr_shader_texture_changed(unsigned int textureId,bool removed);
@@ -12,7 +12,7 @@ void SetConfigFlags(unsigned int flags) { mr_config_flags|=flags; }
 #ifdef _WIN32
 static WGPUStringView mr_string(const char *s) { return (WGPUStringView){s,WGPU_STRLEN}; }
 static void mr_message(const char *prefix,WGPUStringView message) {
-    fprintf(stderr,"raygpu: %s: ",prefix);
+    fprintf(stderr,"sargpu: %s: ",prefix);
     if (message.data) fwrite(message.data,1,message.length==WGPU_STRLEN ? strlen(message.data) : message.length,stderr);
     fputc('\n',stderr);
 }
@@ -407,7 +407,7 @@ Texture2D LoadTextureRGBA(const unsigned char *pixels,int width,int height) {
     if (!mr.device || !pixels || width<=0 || height<=0 || width>8192 || height>8192) return (Texture2D){0};
     MRTexture *t=NULL;
     for (int i=0;i<MR_MAX_TEXTURES;i++) if (!mr.textures[i].id) { t=&mr.textures[i]; break; }
-    if (!t) { fprintf(stderr,"raygpu: texture limit reached\n"); return (Texture2D){0}; }
+    if (!t) { fprintf(stderr,"sargpu: texture limit reached\n"); return (Texture2D){0}; }
     WGPUTextureDescriptor desc=WGPU_TEXTURE_DESCRIPTOR_INIT;
     desc.size=(WGPUExtent3D){(uint32_t)width,(uint32_t)height,1};
     desc.dimension=WGPUTextureDimension_2D; desc.format=WGPUTextureFormat_RGBA8Unorm;
@@ -437,12 +437,12 @@ Texture2D LoadTextureRGBA(const unsigned char *pixels,int width,int height) {
         mr.textures[i].pixels=MemAlloc((unsigned int)((size_t)width*height*4));if(!mr.textures[i].pixels)return(Texture2D){0};memcpy(mr.textures[i].pixels,pixels,(size_t)width*height*4);mr.textures[i].width=width;mr.textures[i].height=height;mr.textures[i].mipmaps=1;mr.textures[i].id=id; mr_web_texture(id,pixels,width,height);
         return (Texture2D){id,width,height,1,7};
     }
-    puts("raygpu: texture limit reached"); return (Texture2D){0};
+    puts("sargpu: texture limit reached"); return (Texture2D){0};
 }
 #endif
 void UnloadTexture(Texture2D texture) {
     MRTexture *t=mr_texture(texture.id); if (!t || texture.id==mr.white) return;
-    if (mr.drawing) { puts("raygpu: unload textures outside BeginDrawing/EndDrawing"); return; }
+    if (mr.drawing) { puts("sargpu: unload textures outside BeginDrawing/EndDrawing"); return; }
     if(!mr.close)mr_shader_texture_changed(texture.id,true);
 #ifdef _WIN32
     wgpuBindGroupRelease(t->group); if (t->customSampler) wgpuSamplerRelease(t->customSampler);
@@ -551,13 +551,13 @@ static void mr_shader_parse_named_locations(MRShaderEntry *entry,const char *cod
         while(*p==' '||*p=='\t')p++;int slot=0,hasDigit=false;while(*p>='0'&&*p<='9'){hasDigit=true;slot=slot*10+(*p++-'0');}
         if(!n||!hasDigit||slot<0||slot>=maxSlot)continue;entry->explicitLocations=true;mr_shader_add_location(entry,name,slot);
     }}
-static void mr_shader_parse_texture_locations(MRShaderEntry *entry,const char *code){if(!code)return;mr_shader_parse_named_locations(entry,code,"@raygpu_sampler",15,RAYGPU_MAX_SHADER_TEXTURES);for(const char *p=code;*p;p++)if(*p=='@'&&mr_text_starts(p,"@group(2)")){const char *end=p;while(*end&&*end!=';')end++;const char *binding=p;while(binding<end&&!(*binding=='@'&&mr_text_starts(binding,"@binding(")))binding++;if(binding>=end)continue;binding+=9;int value=0,hasDigit=false;while(*binding>='0'&&*binding<='9'){hasDigit=true;value=value*10+(*binding++-'0');}if(!hasDigit||(value&1)==0||value/2>=RAYGPU_MAX_SHADER_TEXTURES)continue;const char *var=binding;while(var<end&&!mr_text_starts(var,"var"))var++;if(var>=end)continue;var+=3;while(var<end&&(*var==' '||*var=='\t'||*var=='\n'||*var=='\r'))var++;char name[64];int n=0;while(var<end&&(*var=='_'||(*var>='a'&&*var<='z')||(*var>='A'&&*var<='Z')||(*var>='0'&&*var<='9'))&&n<63)name[n++]=*var++;name[n]=0;if(n){entry->explicitLocations=true;mr_shader_add_location(entry,name,value/2);}}}
+static void mr_shader_parse_texture_locations(MRShaderEntry *entry,const char *code){if(!code)return;mr_shader_parse_named_locations(entry,code,"@sargpu_sampler",15,SARGPU_MAX_SHADER_TEXTURES);for(const char *p=code;*p;p++)if(*p=='@'&&mr_text_starts(p,"@group(2)")){const char *end=p;while(*end&&*end!=';')end++;const char *binding=p;while(binding<end&&!(*binding=='@'&&mr_text_starts(binding,"@binding(")))binding++;if(binding>=end)continue;binding+=9;int value=0,hasDigit=false;while(*binding>='0'&&*binding<='9'){hasDigit=true;value=value*10+(*binding++-'0');}if(!hasDigit||(value&1)==0||value/2>=SARGPU_MAX_SHADER_TEXTURES)continue;const char *var=binding;while(var<end&&!mr_text_starts(var,"var"))var++;if(var>=end)continue;var+=3;while(var<end&&(*var==' '||*var=='\t'||*var=='\n'||*var=='\r'))var++;char name[64];int n=0;while(var<end&&(*var=='_'||(*var>='a'&&*var<='z')||(*var>='A'&&*var<='Z')||(*var>='0'&&*var<='9'))&&n<63)name[n++]=*var++;name[n]=0;if(n){entry->explicitLocations=true;mr_shader_add_location(entry,name,value/2);}}}
 static void mr_shader_add_attribute(MRShaderEntry *entry,const char *name,int slot){if(!entry||!name||!*name||slot<0||slot>15)return;unsigned int hash=mr_name_hash(name);for(int i=0;i<entry->attributeCount;i++)if(entry->attributeHashes[i]==hash)return;if(entry->attributeCount<16){entry->attributeHashes[entry->attributeCount]=hash;entry->attributeSlots[entry->attributeCount]=(unsigned char)slot;entry->attributeCount++;}}
-static void mr_shader_parse_attributes(MRShaderEntry *entry,const char *code){if(!code)return;for(const char *p=code;*p;p++)if(*p=='@'&&mr_text_starts(p,"@raygpu_attribute")){p+=17;while(*p==' '||*p=='\t')p++;char name[64];int n=0;while((*p=='_'||(*p>='a'&&*p<='z')||(*p>='A'&&*p<='Z')||(*p>='0'&&*p<='9'))&&n<63)name[n++]=*p++;name[n]=0;while(*p==' '||*p=='\t')p++;int slot=0,hasDigit=false;while(*p>='0'&&*p<='9'){hasDigit=true;slot=slot*10+(*p++-'0');}if(n&&hasDigit)mr_shader_add_attribute(entry,name,slot);}const char *vertex=code;while(*vertex&&!(*vertex=='@'&&mr_text_starts(vertex,"@vertex")))vertex++;while(*vertex&&*vertex!='(')vertex++;if(!*vertex)return;int depth=1;for(const char *p=vertex+1;*p&&depth>0;p++){if(*p=='(')depth++;else if(*p==')')depth--;else if(depth==1&&*p=='@'&&mr_text_starts(p,"@location(")){const char *at=p+10;int slot=0,hasDigit=false;while(*at>='0'&&*at<='9'){hasDigit=true;slot=slot*10+(*at++-'0');}if(!hasDigit||*at!=')')continue;at++;while(*at==' '||*at=='\t'||*at=='\n'||*at=='\r')at++;char name[64];int n=0;while((*at=='_'||(*at>='a'&&*at<='z')||(*at>='A'&&*at<='Z')||(*at>='0'&&*at<='9'))&&n<63)name[n++]=*at++;name[n]=0;if(n)mr_shader_add_attribute(entry,name,slot);}}}
+static void mr_shader_parse_attributes(MRShaderEntry *entry,const char *code){if(!code)return;for(const char *p=code;*p;p++)if(*p=='@'&&mr_text_starts(p,"@sargpu_attribute")){p+=17;while(*p==' '||*p=='\t')p++;char name[64];int n=0;while((*p=='_'||(*p>='a'&&*p<='z')||(*p>='A'&&*p<='Z')||(*p>='0'&&*p<='9'))&&n<63)name[n++]=*p++;name[n]=0;while(*p==' '||*p=='\t')p++;int slot=0,hasDigit=false;while(*p>='0'&&*p<='9'){hasDigit=true;slot=slot*10+(*p++-'0');}if(n&&hasDigit)mr_shader_add_attribute(entry,name,slot);}const char *vertex=code;while(*vertex&&!(*vertex=='@'&&mr_text_starts(vertex,"@vertex")))vertex++;while(*vertex&&*vertex!='(')vertex++;if(!*vertex)return;int depth=1;for(const char *p=vertex+1;*p&&depth>0;p++){if(*p=='(')depth++;else if(*p==')')depth--;else if(depth==1&&*p=='@'&&mr_text_starts(p,"@location(")){const char *at=p+10;int slot=0,hasDigit=false;while(*at>='0'&&*at<='9'){hasDigit=true;slot=slot*10+(*at++-'0');}if(!hasDigit||*at!=')')continue;at++;while(*at==' '||*at=='\t'||*at=='\n'||*at=='\r')at++;char name[64];int n=0;while((*at=='_'||(*at>='a'&&*at<='z')||(*at>='A'&&*at<='Z')||(*at>='0'&&*at<='9'))&&n<63)name[n++]=*at++;name[n]=0;if(n)mr_shader_add_attribute(entry,name,slot);}}}
 #ifdef _WIN32
-static bool mr_rebuild_shader_texture_group(MRShaderEntry *entry){MRTexture *fallback=mr_texture(mr.white);if(!entry||!fallback||!mr.shaderTextureLayout)return false;WGPUBindGroupEntry bindings[RAYGPU_MAX_SHADER_TEXTURES*2];memset(bindings,0,sizeof bindings);for(int i=0;i<RAYGPU_MAX_SHADER_TEXTURES;i++){MRTexture *texture=mr_texture(entry->extraTextures[i]);if(!texture)texture=fallback;bindings[i*2].binding=(uint32_t)i*2;bindings[i*2].sampler=texture->customSampler?texture->customSampler:mr.sampler;bindings[i*2+1].binding=(uint32_t)i*2+1;bindings[i*2+1].textureView=texture->view;}WGPUBindGroupDescriptor descriptor=WGPU_BIND_GROUP_DESCRIPTOR_INIT;descriptor.layout=mr.shaderTextureLayout;descriptor.entryCount=RAYGPU_MAX_SHADER_TEXTURES*2;descriptor.entries=bindings;WGPUBindGroup group=wgpuDeviceCreateBindGroup(mr.device,&descriptor);if(!group)return false;if(entry->textureGroup)wgpuBindGroupRelease(entry->textureGroup);entry->textureGroup=group;return true;}
+static bool mr_rebuild_shader_texture_group(MRShaderEntry *entry){MRTexture *fallback=mr_texture(mr.white);if(!entry||!fallback||!mr.shaderTextureLayout)return false;WGPUBindGroupEntry bindings[SARGPU_MAX_SHADER_TEXTURES*2];memset(bindings,0,sizeof bindings);for(int i=0;i<SARGPU_MAX_SHADER_TEXTURES;i++){MRTexture *texture=mr_texture(entry->extraTextures[i]);if(!texture)texture=fallback;bindings[i*2].binding=(uint32_t)i*2;bindings[i*2].sampler=texture->customSampler?texture->customSampler:mr.sampler;bindings[i*2+1].binding=(uint32_t)i*2+1;bindings[i*2+1].textureView=texture->view;}WGPUBindGroupDescriptor descriptor=WGPU_BIND_GROUP_DESCRIPTOR_INIT;descriptor.layout=mr.shaderTextureLayout;descriptor.entryCount=SARGPU_MAX_SHADER_TEXTURES*2;descriptor.entries=bindings;WGPUBindGroup group=wgpuDeviceCreateBindGroup(mr.device,&descriptor);if(!group)return false;if(entry->textureGroup)wgpuBindGroupRelease(entry->textureGroup);entry->textureGroup=group;return true;}
 #endif
-Shader LoadShaderFromMemory(const char *vsCode,const char *fsCode){if(!mr.ready)return(Shader){0};if(!vsCode)vsCode=mr_default_vertex_wgsl;if(!fsCode)fsCode=mr_default_fragment_wgsl;MRShaderEntry*entry=NULL;for(int i=0;i<32;i++)if(!mr.shaders[i].id){entry=&mr.shaders[i];break;}if(!entry)return(Shader){0};memset(entry,0,sizeof *entry);mr_shader_parse_named_locations(entry,vsCode,"@raygpu_uniform",15,32);mr_shader_parse_named_locations(entry,fsCode,"@raygpu_uniform",15,32);mr_shader_parse_texture_locations(entry,vsCode);mr_shader_parse_texture_locations(entry,fsCode);mr_shader_parse_attributes(entry,vsCode);unsigned int id=++mr.nextShader;
+Shader LoadShaderFromMemory(const char *vsCode,const char *fsCode){if(!mr.ready)return(Shader){0};if(!vsCode)vsCode=mr_default_vertex_wgsl;if(!fsCode)fsCode=mr_default_fragment_wgsl;MRShaderEntry*entry=NULL;for(int i=0;i<32;i++)if(!mr.shaders[i].id){entry=&mr.shaders[i];break;}if(!entry)return(Shader){0};memset(entry,0,sizeof *entry);mr_shader_parse_named_locations(entry,vsCode,"@sargpu_uniform",15,32);mr_shader_parse_named_locations(entry,fsCode,"@sargpu_uniform",15,32);mr_shader_parse_texture_locations(entry,vsCode);mr_shader_parse_texture_locations(entry,fsCode);mr_shader_parse_attributes(entry,vsCode);unsigned int id=++mr.nextShader;
 #ifdef _WIN32
     if(!mr_make_shader_pipelines(vsCode,fsCode,entry->pipelines)){for(int i=0;i<6;i++)if(entry->pipelines[i])wgpuRenderPipelineRelease(entry->pipelines[i]);memset(entry,0,sizeof *entry);return(Shader){0};}
     WGPUBufferDescriptor bd=WGPU_BUFFER_DESCRIPTOR_INIT;bd.size=sizeof entry->uniforms;bd.usage=WGPUBufferUsage_Uniform|WGPUBufferUsage_CopyDst;entry->uniformBuffer=wgpuDeviceCreateBuffer(mr.device,&bd);
@@ -568,7 +568,7 @@ Shader LoadShaderFromMemory(const char *vsCode,const char *fsCode){if(!mr.ready)
 #endif
     entry->id=id;return(Shader){id,NULL};}
 Shader LoadShader(const char*vsFile,const char*fsFile){char*vs=vsFile?LoadFileText(vsFile):NULL,*fs=fsFile?LoadFileText(fsFile):NULL;if((vsFile&&!vs)||(fsFile&&!fs)){UnloadFileText(vs);UnloadFileText(fs);return(Shader){0};}Shader shader=LoadShaderFromMemory(vs,fs);UnloadFileText(vs);UnloadFileText(fs);return shader;}
-Shader LoadMaterialShaderFromMemory(const char *vsCode,const char *fsCode){if(!mr.ready||!vsCode||!fsCode)return(Shader){0};MRShaderEntry *entry=NULL;for(int i=0;i<32;i++)if(!mr.shaders[i].id){entry=&mr.shaders[i];break;}if(!entry)return(Shader){0};memset(entry,0,sizeof *entry);mr_shader_parse_named_locations(entry,vsCode,"@raygpu_uniform",15,32);mr_shader_parse_named_locations(entry,fsCode,"@raygpu_uniform",15,32);mr_shader_parse_texture_locations(entry,vsCode);mr_shader_parse_texture_locations(entry,fsCode);mr_shader_parse_attributes(entry,vsCode);unsigned int id=++mr.nextShader;
+Shader LoadMaterialShaderFromMemory(const char *vsCode,const char *fsCode){if(!mr.ready||!vsCode||!fsCode)return(Shader){0};MRShaderEntry *entry=NULL;for(int i=0;i<32;i++)if(!mr.shaders[i].id){entry=&mr.shaders[i];break;}if(!entry)return(Shader){0};memset(entry,0,sizeof *entry);mr_shader_parse_named_locations(entry,vsCode,"@sargpu_uniform",15,32);mr_shader_parse_named_locations(entry,fsCode,"@sargpu_uniform",15,32);mr_shader_parse_texture_locations(entry,vsCode);mr_shader_parse_texture_locations(entry,fsCode);mr_shader_parse_attributes(entry,vsCode);unsigned int id=++mr.nextShader;
 #ifdef _WIN32
     entry->pipeline3d=mr_make_material_pipeline(vsCode,fsCode);WGPUBufferDescriptor bd=WGPU_BUFFER_DESCRIPTOR_INIT;bd.size=sizeof entry->uniforms;bd.usage=WGPUBufferUsage_Uniform|WGPUBufferUsage_CopyDst;entry->uniformBuffer=wgpuDeviceCreateBuffer(mr.device,&bd);WGPUBindGroupEntry be=WGPU_BIND_GROUP_ENTRY_INIT;be.binding=0;be.buffer=entry->uniformBuffer;be.size=sizeof entry->uniforms;WGPUBindGroupDescriptor gd=WGPU_BIND_GROUP_DESCRIPTOR_INIT;gd.layout=mr.uniformLayout;gd.entryCount=1;gd.entries=&be;entry->uniformGroup=wgpuDeviceCreateBindGroup(mr.device,&gd);if(!entry->pipeline3d||!entry->uniformBuffer||!entry->uniformGroup||!mr_rebuild_shader_texture_group(entry)){if(entry->pipeline3d)wgpuRenderPipelineRelease(entry->pipeline3d);if(entry->textureGroup)wgpuBindGroupRelease(entry->textureGroup);if(entry->uniformGroup)wgpuBindGroupRelease(entry->uniformGroup);if(entry->uniformBuffer)wgpuBufferRelease(entry->uniformBuffer);memset(entry,0,sizeof *entry);return(Shader){0};}
 #else
@@ -598,18 +598,18 @@ void SetShaderValueV(Shader shader,int location,const void*value,int type,int co
 }
 void SetShaderValue(Shader shader,int location,const void*value,int type){SetShaderValueV(shader,location,value,type,1);}
 void SetShaderValueMatrix(Shader shader,int location,Matrix matrix){SetShaderValueV(shader,location,&matrix,SHADER_UNIFORM_VEC4,4);}
-void SetShaderValueTexture(Shader shader,int location,Texture2D texture){MRShaderEntry *entry=mr_shader(shader.id);if(!entry||location<0||location>=RAYGPU_MAX_SHADER_TEXTURES||!mr_texture(texture.id))return;entry->extraTextures[location]=texture.id;
+void SetShaderValueTexture(Shader shader,int location,Texture2D texture){MRShaderEntry *entry=mr_shader(shader.id);if(!entry||location<0||location>=SARGPU_MAX_SHADER_TEXTURES||!mr_texture(texture.id))return;entry->extraTextures[location]=texture.id;
 #ifdef _WIN32
     mr_rebuild_shader_texture_group(entry);
 #else
     mr_web_shader_texture(shader.id,location,texture.id);
 #endif
 }
-static void mr_shader_texture_changed(unsigned int textureId,bool removed){if(!textureId)return;for(int i=0;i<32;i++){MRShaderEntry *entry=&mr.shaders[i];if(!entry->id)continue;bool changed=false;for(int slot=0;slot<RAYGPU_MAX_SHADER_TEXTURES;slot++)if(entry->extraTextures[slot]==textureId){if(removed)entry->extraTextures[slot]=0;changed=true;}if(changed){
+static void mr_shader_texture_changed(unsigned int textureId,bool removed){if(!textureId)return;for(int i=0;i<32;i++){MRShaderEntry *entry=&mr.shaders[i];if(!entry->id)continue;bool changed=false;for(int slot=0;slot<SARGPU_MAX_SHADER_TEXTURES;slot++)if(entry->extraTextures[slot]==textureId){if(removed)entry->extraTextures[slot]=0;changed=true;}if(changed){
 #ifdef _WIN32
         mr_rebuild_shader_texture_group(entry);
 #else
-        for(int slot=0;slot<RAYGPU_MAX_SHADER_TEXTURES;slot++)mr_web_shader_texture(entry->id,slot,entry->extraTextures[slot]);
+        for(int slot=0;slot<SARGPU_MAX_SHADER_TEXTURES;slot++)mr_web_shader_texture(entry->id,slot,entry->extraTextures[slot]);
 #endif
     }}}
 #ifdef _WIN32
@@ -644,7 +644,7 @@ static bool mr_renderer(void) {
     mr.textureLayout=wgpuDeviceCreateBindGroupLayout(mr.device,&bindLayout);
     WGPUBindGroupLayoutEntry uniformEntry=WGPU_BIND_GROUP_LAYOUT_ENTRY_INIT;uniformEntry.binding=0;uniformEntry.visibility=WGPUShaderStage_Vertex|WGPUShaderStage_Fragment;uniformEntry.buffer.type=WGPUBufferBindingType_Uniform;uniformEntry.buffer.minBindingSize=32*64;
     WGPUBindGroupLayoutDescriptor uniformDesc=WGPU_BIND_GROUP_LAYOUT_DESCRIPTOR_INIT;uniformDesc.entryCount=1;uniformDesc.entries=&uniformEntry;mr.uniformLayout=wgpuDeviceCreateBindGroupLayout(mr.device,&uniformDesc);
-    WGPUBindGroupLayoutEntry shaderTextures[RAYGPU_MAX_SHADER_TEXTURES*2];memset(shaderTextures,0,sizeof shaderTextures);for(int i=0;i<RAYGPU_MAX_SHADER_TEXTURES;i++){shaderTextures[i*2].binding=(uint32_t)i*2;shaderTextures[i*2].visibility=WGPUShaderStage_Fragment;shaderTextures[i*2].sampler.type=WGPUSamplerBindingType_Filtering;shaderTextures[i*2+1].binding=(uint32_t)i*2+1;shaderTextures[i*2+1].visibility=WGPUShaderStage_Fragment;shaderTextures[i*2+1].texture.sampleType=WGPUTextureSampleType_Float;shaderTextures[i*2+1].texture.viewDimension=WGPUTextureViewDimension_2D;}WGPUBindGroupLayoutDescriptor shaderTextureDesc=WGPU_BIND_GROUP_LAYOUT_DESCRIPTOR_INIT;shaderTextureDesc.entryCount=RAYGPU_MAX_SHADER_TEXTURES*2;shaderTextureDesc.entries=shaderTextures;mr.shaderTextureLayout=wgpuDeviceCreateBindGroupLayout(mr.device,&shaderTextureDesc);
+    WGPUBindGroupLayoutEntry shaderTextures[SARGPU_MAX_SHADER_TEXTURES*2];memset(shaderTextures,0,sizeof shaderTextures);for(int i=0;i<SARGPU_MAX_SHADER_TEXTURES;i++){shaderTextures[i*2].binding=(uint32_t)i*2;shaderTextures[i*2].visibility=WGPUShaderStage_Fragment;shaderTextures[i*2].sampler.type=WGPUSamplerBindingType_Filtering;shaderTextures[i*2+1].binding=(uint32_t)i*2+1;shaderTextures[i*2+1].visibility=WGPUShaderStage_Fragment;shaderTextures[i*2+1].texture.sampleType=WGPUTextureSampleType_Float;shaderTextures[i*2+1].texture.viewDimension=WGPUTextureViewDimension_2D;}WGPUBindGroupLayoutDescriptor shaderTextureDesc=WGPU_BIND_GROUP_LAYOUT_DESCRIPTOR_INIT;shaderTextureDesc.entryCount=SARGPU_MAX_SHADER_TEXTURES*2;shaderTextureDesc.entries=shaderTextures;mr.shaderTextureLayout=wgpuDeviceCreateBindGroupLayout(mr.device,&shaderTextureDesc);
     WGPUSamplerDescriptor sampler=WGPU_SAMPLER_DESCRIPTOR_INIT;
     sampler.magFilter=WGPUFilterMode_Nearest; sampler.minFilter=WGPUFilterMode_Nearest;
     sampler.addressModeU=WGPUAddressMode_Repeat; sampler.addressModeV=WGPUAddressMode_Repeat;
@@ -747,7 +747,7 @@ static bool mr_resize_depth(int width,int height) {
     mr.depthWidth=width;mr.depthHeight=height;return true;
 }
 void InitWindow(int width,int height,const char *title) {
-    if (mr.instance) { fprintf(stderr,"raygpu: only one window is supported\n"); return; }
+    if (mr.instance) { fprintf(stderr,"sargpu: only one window is supported\n"); return; }
     memset(&mr,0,sizeof mr); mr.flags=mr_config_flags; mr.fps=60; mr.dt=1.0f/60; mr.clear=BLACK; mr.exitKey=KEY_ESCAPE; mr.focused=true; mr.mouseScale=(Vector2){1,1};mr.gesturesEnabled=0x3ffu;mr_init_3d_defaults();
     mr.start=mr.previous=mr_clock();
     if (width<=0 || height<=0 || width>8192 || height>8192) { mr_error("Invalid window size"); return; }
@@ -806,7 +806,7 @@ void InitWindow(int width,int height,const char *title) {
     if (!mr.device || mr.close) { CloseWindow(); return; }
     mr.queue=wgpuDeviceGetQueue(mr.device); mr.ready=mr_renderer();
     if (!mr.ready) { CloseWindow(); return; }
-    mr.previous=mr_clock(); puts("raygpu: WebGPU renderer ready");
+    mr.previous=mr_clock(); puts("sargpu: WebGPU renderer ready");
 }
 #else
 void InitWindow(int width,int height,const char *title) {
@@ -817,11 +817,11 @@ void InitWindow(int width,int height,const char *title) {
     mr_web_init(width,height,title); mr_web_window_command(7,(int)mr.flags,0,NULL); mr.ready=true;
     const unsigned char white[4]={255,255,255,255}; mr.white=LoadTextureRGBA(white,1,1).id;
     mr.shapesTexture=(Texture2D){mr.white,1,1,1,7}; mr.shapesSource=(Rectangle){0,0,1,1};
-    puts("raygpu: WebGPU renderer ready");
+    puts("sargpu: WebGPU renderer ready");
 }
 #endif
 bool IsWindowReady(void) { return mr.ready; }
-bool RayGPUHadError(void) { return mr.error; }
+bool SarGPUHadError(void) { return mr.error; }
 bool WindowShouldClose(void) {
     mr_pump();
     mr_dispatch_readbacks();

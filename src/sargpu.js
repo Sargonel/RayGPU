@@ -1,4 +1,4 @@
-/* Browser platform for raygpu. Plain JavaScript; no packages or runtime SDK.
+/* Browser platform for sargpu. Plain JavaScript; no packages or runtime SDK.
  * C generates vertices and ordered texture batches; this submits them to WebGPU.
  */
 "use strict";
@@ -230,7 +230,7 @@ fn F(c:f32,f0:vec3f)->vec3f{return f0+(vec3f(1)-f0)*pow(1-c,5);}fn D(nh:f32,r:f3
             if (data) fileCache.set(name, data);
             return data;
         }
-        const imports = {raygpu: {
+        const imports = {sargpu: {
             log: pointer => { const text = readText(pointer); console.log(text); status.textContent = text; },
             now: () => performance.now(),
             sin: Math.sin, cos: Math.cos, math_pow: Math.pow, math_log: Math.log,
@@ -458,10 +458,10 @@ fn F(c:f32,f0:vec3f)->vec3f{return f0+(vec3f(1)-f0)*pow(1-c,5);}fn D(nh:f32,r:f3
                 const rowBytes=entry.width*4,paddedRow=(rowBytes+255)&~255,size=paddedRow*entry.height;
                 const buffer=device.createBuffer({size,usage:GPUBufferUsage.COPY_DST|GPUBufferUsage.MAP_READ});
                 const encoder=device.createCommandEncoder();encoder.copyTextureToBuffer({texture:entry.texture},{buffer,bytesPerRow:paddedRow,rowsPerImage:entry.height},[entry.width,entry.height,1]);device.queue.submit([encoder.finish()]);
-                buffer.mapAsync(GPUMapMode.READ).then(()=>{const destination=wasm.raygpu_readback_allocate(requestId,rowBytes*entry.height);if(destination){const source=new Uint8Array(buffer.getMappedRange()),output=new Uint8Array(wasm.memory.buffer,destination,rowBytes*entry.height);for(let y=0;y<entry.height;y++)output.set(source.subarray(y*paddedRow,y*paddedRow+rowBytes),y*rowBytes);if(format.startsWith("bgra"))for(let i=0;i<entry.width*entry.height;i++){const at=i*4,value=output[at];output[at]=output[at+2];output[at+2]=value;}buffer.unmap();buffer.destroy();wasm.raygpu_readback_complete(requestId,destination,entry.width,entry.height);}else{buffer.unmap();buffer.destroy();wasm.raygpu_readback_complete(requestId,0,0,0);}}).catch(()=>{buffer.destroy();wasm.raygpu_readback_complete(requestId,0,0,0);});return 1;
+                buffer.mapAsync(GPUMapMode.READ).then(()=>{const destination=wasm.sargpu_readback_allocate(requestId,rowBytes*entry.height);if(destination){const source=new Uint8Array(buffer.getMappedRange()),output=new Uint8Array(wasm.memory.buffer,destination,rowBytes*entry.height);for(let y=0;y<entry.height;y++)output.set(source.subarray(y*paddedRow,y*paddedRow+rowBytes),y*rowBytes);if(format.startsWith("bgra"))for(let i=0;i<entry.width*entry.height;i++){const at=i*4,value=output[at];output[at]=output[at+2];output[at+2]=value;}buffer.unmap();buffer.destroy();wasm.sargpu_readback_complete(requestId,destination,entry.width,entry.height);}else{buffer.unmap();buffer.destroy();wasm.sargpu_readback_complete(requestId,0,0,0);}}).catch(()=>{buffer.destroy();wasm.sargpu_readback_complete(requestId,0,0,0);});return 1;
             },
             screen_readback: requestId => {
-                createImageBitmap(canvas).then(bitmap=>{const copy=typeof OffscreenCanvas!=="undefined"?new OffscreenCanvas(canvas.width,canvas.height):document.createElement("canvas");copy.width=canvas.width;copy.height=canvas.height;const ctx=copy.getContext("2d");ctx.drawImage(bitmap,0,0);bitmap.close();const pixels=ctx.getImageData(0,0,canvas.width,canvas.height).data,destination=wasm.raygpu_readback_allocate(requestId,pixels.length);if(destination)new Uint8Array(wasm.memory.buffer,destination,pixels.length).set(pixels);wasm.raygpu_readback_complete(requestId,destination||0,destination?canvas.width:0,destination?canvas.height:0);}).catch(()=>wasm.raygpu_readback_complete(requestId,0,0,0));return 1;
+                createImageBitmap(canvas).then(bitmap=>{const copy=typeof OffscreenCanvas!=="undefined"?new OffscreenCanvas(canvas.width,canvas.height):document.createElement("canvas");copy.width=canvas.width;copy.height=canvas.height;const ctx=copy.getContext("2d");ctx.drawImage(bitmap,0,0);bitmap.close();const pixels=ctx.getImageData(0,0,canvas.width,canvas.height).data,destination=wasm.sargpu_readback_allocate(requestId,pixels.length);if(destination)new Uint8Array(wasm.memory.buffer,destination,pixels.length).set(pixels);wasm.sargpu_readback_complete(requestId,destination||0,destination?canvas.width:0,destination?canvas.height:0);}).catch(()=>wasm.sargpu_readback_complete(requestId,0,0,0));return 1;
             },
             render_texture: (id, width, height) => {
                 const texture=device.createTexture({size:[width,height],format,
@@ -605,7 +605,7 @@ fn F(c:f32,f0:vec3f)->vec3f{return f0+(vec3f(1)-f0)*pow(1-c,5);}fn D(nh:f32,r:f3
             MetaLeft:343, ShiftRight:344, ControlRight:345, AltRight:346,
             MetaRight:347, ContextMenu:348, AudioVolumeUp:24, AudioVolumeDown:25
         };
-        function raygpuKey(code) {
+        function sargpuKey(code) {
             if (/^Key[A-Z]$/.test(code)) return code.charCodeAt(3);
             if (/^Digit[0-9]$/.test(code)) return code.charCodeAt(5);
             if (/^Numpad[0-9]$/.test(code)) return 320 + Number(code.charAt(6));
@@ -613,13 +613,13 @@ fn F(c:f32,f0:vec3f)->vec3f{return f0+(vec3f(1)-f0)*pow(1-c,5);}fn D(nh:f32,r:f3
         }
         function keyboard(event) {
             if (event.type === "keydown") { retryFullscreen(); retryPointerLock(); }
-            const key = raygpuKey(event.code);
+            const key = sargpuKey(event.code);
             if (key) {
                 if (event.type === "keydown" && audioContext && audioContext.state === "suspended") audioContext.resume();
-                wasm.raygpu_key(key, event.type === "keydown" ? 1 : 0);
+                wasm.sargpu_key(key, event.type === "keydown" ? 1 : 0);
                 if (event.type === "keydown" && !event.ctrlKey && !event.altKey && !event.metaKey) {
                     const characters=Array.from(event.key);
-                    if (characters.length === 1) wasm.raygpu_char(characters[0].codePointAt(0));
+                    if (characters.length === 1) wasm.sargpu_char(characters[0].codePointAt(0));
                 }
                 event.preventDefault();
             }
@@ -639,10 +639,10 @@ fn F(c:f32,f0:vec3f)->vec3f{return f0+(vec3f(1)-f0)*pow(1-c,5);}fn D(nh:f32,r:f3
                 return {name, data:new Uint8Array(await file.arrayBuffer())};
             })).then(entries => { if (!stopped) { droppedNames = entries.map(entry => entry.name); for (const entry of entries) fileCache.set(entry.name, entry.data); } }).catch(() => {});
         }, {signal: events.signal});
-        window.addEventListener("focus", () => wasm.raygpu_focus(1), {signal: events.signal});
-        window.addEventListener("blur", () => { wasm.raygpu_focus(0); wasm.raygpu_blur(); }, {signal: events.signal});
+        window.addEventListener("focus", () => wasm.sargpu_focus(1), {signal: events.signal});
+        window.addEventListener("blur", () => { wasm.sargpu_focus(0); wasm.sargpu_blur(); }, {signal: events.signal});
         document.addEventListener("visibilitychange", () => {
-            if (document.hidden) wasm.raygpu_blur();
+            if (document.hidden) wasm.sargpu_blur();
             lastFrame = undefined;
         }, {signal: events.signal});
         const button = value => value === 2 ? 1 : value === 1 ? 2 : value === 0 ? 0 : value === 3 ? 3 : value === 4 ? 4 : -1;
@@ -655,11 +655,11 @@ fn F(c:f32,f0:vec3f)->vec3f{return f0+(vec3f(1)-f0)*pow(1-c,5);}fn D(nh:f32,r:f3
             mouseX=Math.max(0,Math.min(canvas.width,mouseX));mouseY=Math.max(0,Math.min(canvas.height,mouseY));
             const action=event.type==="pointerdown"?0:(event.type==="pointerup"||event.type==="pointercancel"?2:1);
             if(event.pointerType==="touch"||event.pointerType==="pen") {
-                wasm.raygpu_mouse(mouseX,mouseY,-1,0);wasm.raygpu_touch(event.pointerId,action,mouseX,mouseY);
+                wasm.sargpu_mouse(mouseX,mouseY,-1,0);wasm.sargpu_touch(event.pointerId,action,mouseX,mouseY);
             } else {
                 const mapped=event.type==="pointermove"?-1:button(event.button);
-                wasm.raygpu_mouse(mouseX,mouseY,mapped,event.type==="pointerdown"?1:0);
-                if(event.button===0||event.type==="pointermove")wasm.raygpu_touch(-1,action,mouseX,mouseY);
+                wasm.sargpu_mouse(mouseX,mouseY,mapped,event.type==="pointerdown"?1:0);
+                if(event.button===0||event.type==="pointermove")wasm.sargpu_touch(-1,action,mouseX,mouseY);
             }
             if (event.type === "pointerdown") {
                 retryFullscreen(); retryPointerLock();
@@ -673,7 +673,7 @@ fn F(c:f32,f0:vec3f)->vec3f{return f0+(vec3f(1)-f0)*pow(1-c,5);}fn D(nh:f32,r:f3
         canvas.addEventListener("pointerleave",()=>{cursorOnCanvas=false;},{signal:events.signal});
         document.addEventListener("pointerlockchange",()=>{applyCursor();},{signal:events.signal});
         canvas.addEventListener("wheel", event => {
-            wasm.raygpu_wheel(-Math.sign(event.deltaX), -Math.sign(event.deltaY));
+            wasm.sargpu_wheel(-Math.sign(event.deltaX), -Math.sign(event.deltaY));
             event.preventDefault();
         }, {signal: events.signal, passive: false});
         canvas.addEventListener("contextmenu", event => event.preventDefault(), {signal: events.signal});
@@ -683,7 +683,7 @@ fn F(c:f32,f0:vec3f)->vec3f{return f0+(vec3f(1)-f0)*pow(1-c,5);}fn D(nh:f32,r:f3
             const interval = targetFPS > 0 ? 1000/targetFPS : 0;
             if (lastFrame === undefined || timestamp-lastFrame >= interval-0.5) {
                 lastFrame = timestamp;
-                try { if (!wasm.raygpu_frame()) return; } catch (error) { fail(error); return; }
+                try { if (!wasm.sargpu_frame()) return; } catch (error) { fail(error); return; }
             }
             requestAnimationFrame(frame);
         }

@@ -1,20 +1,20 @@
-/* RayGPU: independent, raylib-inspired WebGPU library.
+/* SarGPU: independent, raylib-inspired WebGPU library.
  * Copyright (c) 2026 Sargonel. Distributed under the MIT license.
- * Include this header and compile src/raygpu.c alongside your application.
- * Windows uses Dawn + Win32; web uses freestanding Clang WASM + raygpu.js.
+ * Include this header and compile src/sargpu.c alongside your application.
+ * Windows uses Dawn + Win32; web uses freestanding Clang WASM + sargpu.js.
  * The API is inspired by raylib by Ramon Santamaria (zlib license).
  */
-#ifndef RAYGPU_H
-#define RAYGPU_H
+#ifndef SARGPU_H
+#define SARGPU_H
 #include <stdbool.h>
 #include <stdint.h>
 
-#define RAYGPU_VERSION_MAJOR 0
-#define RAYGPU_VERSION_MINOR 1
-#define RAYGPU_VERSION_PATCH 0
-#define RAYGPU_MAX_SHADER_TEXTURES 8
-#define RAYGPU_MAX_LIGHTS 8
-#define RAYGPU_VERSION "0.1.0-dev"
+#define SARGPU_VERSION_MAJOR 0
+#define SARGPU_VERSION_MINOR 1
+#define SARGPU_VERSION_PATCH 0
+#define SARGPU_MAX_SHADER_TEXTURES 8
+#define SARGPU_MAX_LIGHTS 8
+#define SARGPU_VERSION "0.1.0-dev"
 
 /* Foundational public types intentionally match raylib's field layout. */
 typedef struct Vector2 { float x,y; } Vector2;
@@ -243,7 +243,7 @@ float Sin(float radians);
 bool IsWindowReady(void);
 bool WindowShouldClose(void);
 void CloseWindow(void);
-bool RayGPUHadError(void);
+bool SarGPUHadError(void);
 bool IsWindowResized(void);
 bool IsWindowFocused(void);
 bool IsWindowMinimized(void);
@@ -778,4 +778,4 @@ void DetachAudioStreamProcessor(AudioStream stream,AudioCallback processor);
 void AttachAudioMixedProcessor(AudioCallback processor);
 void DetachAudioMixedProcessor(AudioCallback processor);
 
-#endif /* RAYGPU_H */
+#endif /* SARGPU_H */

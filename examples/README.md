@@ -1,4 +1,4 @@
-# RayGPU example catalog
+# SarGPU example catalog
 
 The examples build together into one interactive application. `main.c` owns
 the window and catalog screen; every demo keeps its own state and drawing code

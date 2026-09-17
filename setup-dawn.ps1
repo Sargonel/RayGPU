@@ -2,10 +2,10 @@ param([string]$Archive = "")
 
 $ErrorActionPreference = "Stop"
 $ReleaseTag = "dawn-sdk-be6033b"
-$AssetName = "raygpu-dawn-sdk-windows-x64-be6033b.zip"
+$AssetName = "sargpu-dawn-sdk-windows-x64-be6033b.zip"
 $ArchiveSha256 = "812BD76BFD1A4339693BA041F8D792E254E470C2A9A8FA70D95BA0E4F6C906F6"
 $LibrarySha256 = "4F7DB86E1C113C7C4CA3BD5C2B8B2F4B65A2A6727FBF8138A5148D53229C71B6"
-$DownloadUrl = "https://github.com/Sargonel/RayGPU/releases/download/$ReleaseTag/$AssetName"
+$DownloadUrl = "https://github.com/Sargonel/SarGPU/releases/download/$ReleaseTag/$AssetName"
 $DependencyRoot = Join-Path $PSScriptRoot ".deps"
 $SdkPath = Join-Path $DependencyRoot "dawn-sdk"
 $LibraryPath = Join-Path $SdkPath "lib\webgpu_dawn.lib"
@@ -18,7 +18,7 @@ if ($env:OS -ne "Windows_NT" -or -not [Environment]::Is64BitOperatingSystem) {
 if ((Test-Path -LiteralPath $LibraryPath) -and (Test-Path -LiteralPath $HeaderPath)) {
     $InstalledHash = (Get-FileHash -Algorithm SHA256 -LiteralPath $LibraryPath).Hash
     if ($InstalledHash -eq $LibrarySha256) {
-        Write-Host "RayGPU Dawn SDK is already installed and verified."
+        Write-Host "SarGPU Dawn SDK is already installed and verified."
         Write-Host "Run: make run"
         exit 0
     }
@@ -35,7 +35,7 @@ try {
         Write-Host "Using local Dawn SDK archive: $DownloadPath"
     }
     else {
-        Write-Host "Downloading RayGPU Dawn SDK..."
+        Write-Host "Downloading SarGPU Dawn SDK..."
         Invoke-WebRequest -Uri $DownloadUrl -OutFile $DownloadPath
     }
 
@@ -58,7 +58,7 @@ try {
 
     if (Test-Path -LiteralPath $SdkPath) { Remove-Item -LiteralPath $SdkPath -Recurse -Force }
     Move-Item -LiteralPath $ExtractedSdk -Destination $SdkPath
-    Write-Host "RayGPU Dawn SDK installed to $SdkPath"
+    Write-Host "SarGPU Dawn SDK installed to $SdkPath"
     Write-Host "Run: make run"
 }
 finally {

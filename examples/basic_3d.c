@@ -50,7 +50,7 @@ void Basic3DUpdate(void)
         EndMode3D();
 
         DrawRectangle(24, 24, 680, 150, (Color){0, 0, 0, 170});
-        DrawText("RayGPU basic 3D", 44, 40, 36, RAYWHITE);
+        DrawText("SarGPU basic 3D", 44, 40, 36, RAYWHITE);
         DrawText("Move the pointer over the cube to highlight it", 44, 86, 22, LIGHTGRAY);
         DrawText(IsModelValid(glbModel) ? "Loaded examples/assets/example.glb" : "Example GLB could not be loaded",
             44, 142, 20, IsModelValid(glbModel) ? GOLD : GRAY);
@@ -79,7 +79,7 @@ void Basic3DInit(void)
     billboardTexture = LoadTextureFromImage(billboard);
     UnloadImage(billboard);
     SetWindowTitle(IsModelValid(glbModel) ?
-        "RayGPU Examples - Basic 3D - GLB loaded" : "RayGPU Examples - Basic 3D");
+        "SarGPU Examples - Basic 3D - GLB loaded" : "SarGPU Examples - Basic 3D");
 }
 
 void Basic3DShutdown(void)

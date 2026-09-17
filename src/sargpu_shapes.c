@@ -1,9 +1,9 @@
-/* RayGPU shapes module. Compiled through raygpu.c; do not compile separately. */
+/* SarGPU shapes module. Compiled through sargpu.c; do not compile separately. */
 static void mr_triangle_colors(Vector2 a,Vector2 b,Vector2 c,Vector2 uvA,Vector2 uvB,Vector2 uvC,
     Color colorA,Color colorB,Color colorC,unsigned int texture) {
     if (!mr.drawing || mr.targetWidth<=0 || mr.targetHeight<=0) return;
     if (mr.vertexCount+3>MR_MAX_VERTICES) {
-        if (!mr.overflow) puts("raygpu: frame vertex limit reached; remaining geometry skipped");
+        if (!mr.overflow) puts("sargpu: frame vertex limit reached; remaining geometry skipped");
         mr.overflow=true; return;
     }
     unsigned int sx=mr.scissorActive?(unsigned int)(mr.scissor.x<0?0:mr.scissor.x):0;

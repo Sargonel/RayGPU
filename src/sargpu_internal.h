@@ -1,10 +1,10 @@
 /* Private platform definitions and shared state. */
-#ifndef RAYGPU_INTERNAL_H
-#define RAYGPU_INTERNAL_H
-#include "raygpu.h"
+#ifndef SARGPU_INTERNAL_H
+#define SARGPU_INTERNAL_H
+#include "sargpu.h"
 #include <stddef.h>
 #if defined(__wasm__)
-#define MR_IMPORT(name) __attribute__((import_module("raygpu"), import_name(name)))
+#define MR_IMPORT(name) __attribute__((import_module("sargpu"), import_name(name)))
 #define MR_EXPORT(name) __attribute__((export_name(name)))
 MR_IMPORT("log") void mr_log(const char *text);
 MR_IMPORT("now") double mr_web_now(void);
@@ -121,7 +121,7 @@ static int puts(const char *s) { mr_log(s); return 0; }
 #define UINT64_MAX UINT64_C(18446744073709551615)
 #endif
 #else
-#error "raygpu currently supports Windows and wasm32."
+#error "sargpu currently supports Windows and wasm32."
 #endif
 
 #define MR_MAX_VERTICES 262144
@@ -151,7 +151,7 @@ typedef struct MRShaderEntry {
     WGPURenderPipeline pipelines[6],pipeline3d; WGPUBuffer uniformBuffer; WGPUBindGroup uniformGroup,textureGroup;
 #endif
     unsigned int id,nameHashes[32]; unsigned char nameSlots[32]; int locationCount; bool explicitLocations,materialShader; unsigned char uniforms[32][64];
-    unsigned int attributeHashes[16],extraTextures[RAYGPU_MAX_SHADER_TEXTURES]; unsigned char attributeSlots[16]; int attributeCount;
+    unsigned int attributeHashes[16],extraTextures[SARGPU_MAX_SHADER_TEXTURES]; unsigned char attributeSlots[16]; int attributeCount;
 } MRShaderEntry;
 typedef struct MRBatch { unsigned int first,count,texture,blend,shader,x,y,width,height; } MRBatch;
 typedef struct MRGamepadState {
@@ -167,11 +167,11 @@ typedef struct MRInstance3D {
     Matrix model; Color tint; float tintPadding[3]; float material[4];
     Color emission; float emissionPadding[3]; unsigned int skin[4];
 } MRInstance3D;
-typedef struct MRDraw3D { unsigned int mesh,firstInstance,instanceCount,shader,textures[RAYGPU_MAX_SHADER_TEXTURES]; } MRDraw3D;
+typedef struct MRDraw3D { unsigned int mesh,firstInstance,instanceCount,shader,textures[SARGPU_MAX_SHADER_TEXTURES]; } MRDraw3D;
 typedef struct MRLightGPU { Vector4 positionType,directionRange,colorIntensity,spotEnabled; } MRLightGPU;
 typedef struct MRScene3D {
     Matrix viewProjection; Vector4 camera,ambient,fogColor,fogParams;
-    Vector4 skyRight,skyUp,skyForward,settings; MRLightGPU lights[RAYGPU_MAX_LIGHTS];
+    Vector4 skyRight,skyUp,skyForward,settings; MRLightGPU lights[SARGPU_MAX_LIGHTS];
 } MRScene3D;
 typedef struct MRMeshEntry {
 #ifdef _WIN32
@@ -179,12 +179,12 @@ typedef struct MRMeshEntry {
 #endif
     unsigned int id; int vertexCount,indexCount; bool indexed;
 } MRMeshEntry;
-_Static_assert(sizeof(MRVertex)==24,"Vertex layout must match raygpu.js");
-_Static_assert(sizeof(MRBatch)==36,"Batch layout must match raygpu.js");
-_Static_assert(sizeof(MRGpuVertex)==80,"3D vertex layout must match raygpu.js");
-_Static_assert(sizeof(MRInstance3D)==128,"3D instance layout must match raygpu.js");
-_Static_assert(sizeof(MRDraw3D)==48,"3D command layout must match raygpu.js");
-_Static_assert(sizeof(MRScene3D)==704,"3D scene layout must match raygpu.js");
+_Static_assert(sizeof(MRVertex)==24,"Vertex layout must match sargpu.js");
+_Static_assert(sizeof(MRBatch)==36,"Batch layout must match sargpu.js");
+_Static_assert(sizeof(MRGpuVertex)==80,"3D vertex layout must match sargpu.js");
+_Static_assert(sizeof(MRInstance3D)==128,"3D instance layout must match sargpu.js");
+_Static_assert(sizeof(MRDraw3D)==48,"3D command layout must match sargpu.js");
+_Static_assert(sizeof(MRScene3D)==704,"3D scene layout must match sargpu.js");
 static struct {
     void (*updateDraw)(void);
 #ifdef _WIN32
@@ -201,7 +201,7 @@ static struct {
     MRDraw3D draws3d[MR_MAX_3D_DRAWS]; MRInstance3D instances3d[MR_MAX_3D_INSTANCES];
     MRScene3D scene3d; Matrix boneMatricesFrame[MR_MAX_BONE_MATRICES_FRAME];
     unsigned int vertexCount,batchCount,drawCount3d,instanceCount3d,boneMatrixCount3d,skyboxTexture; Color skyboxTint;
-    Light3D lights[RAYGPU_MAX_LIGHTS]; Color ambientColor,fogColor; float ambientIntensity,fogStart,fogEnd,fogDensity; int fogMode; bool pbrEnabled;
+    Light3D lights[SARGPU_MAX_LIGHTS]; Color ambientColor,fogColor; float ambientIntensity,fogStart,fogEnd,fogDensity; int fogMode; bool pbrEnabled;
     bool ready,close,error,drawing,adapterDone,deviceDone,overflow,softwareFrameLimit,resized,focused;
     bool keys[512],pressed[512],repeated[512],released[512];
     bool buttons[7],clicked[7],buttonReleased[7];

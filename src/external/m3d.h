@@ -1,5 +1,5 @@
-/* RayGPU modification: skip system/locale headers in the freestanding WASM build.
- * Platform-independent string/number/locale adapters are supplied by RayGPU. */
+/* SarGPU modification: skip system/locale headers in the freestanding WASM build.
+ * Platform-independent string/number/locale adapters are supplied by SarGPU. */
 /*
  * m3d.h
  * https://gitlab.com/bztsrc/model3d

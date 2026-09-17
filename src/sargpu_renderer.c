@@ -1,4 +1,4 @@
-/* RayGPU renderer module. Compiled through raygpu.c; do not compile separately. */
+/* SarGPU renderer module. Compiled through sargpu.c; do not compile separately. */
 void BeginTextureMode(RenderTexture2D target) {
     if (!IsRenderTextureValid(target)) return;
     mr.vertexCount=mr.batchCount=mr.drawCount3d=mr.instanceCount3d=mr.boneMatrixCount3d=0;mr.skyboxTexture=0; mr.overflow=false; mr.renderTarget=target.id;
@@ -11,8 +11,8 @@ static void mr_render_3d_commands(WGPURenderPassEncoder pass,MRTexture *target,i
     mr_prepare_scene3d(width,height);wgpuQueueWriteBuffer(mr.queue,mr.sceneBuffer3d,0,&mr.scene3d,sizeof mr.scene3d);if(mr.boneMatrixCount3d)wgpuQueueWriteBuffer(mr.queue,mr.boneBuffer3d,0,mr.boneMatricesFrame,(size_t)mr.boneMatrixCount3d*sizeof(Matrix));wgpuQueueWriteBuffer(mr.queue,mr.instanceBuffer3d,0,mr.instances3d,(size_t)mr.instanceCount3d*sizeof(MRInstance3D));wgpuRenderPassEncoderSetScissorRect(pass,0,0,(uint32_t)width,(uint32_t)height);
     for(unsigned int i=0;i<mr.drawCount3d;i++){
         MRDraw3D command=mr.draws3d[i];MRMeshEntry *mesh=mr_mesh_entry(command.mesh);MRTexture *base=mr_texture(command.textures[0]);if(!mesh||!mesh->vertexBuffer||!base||base==target||!command.instanceCount)continue;
-        WGPUBindGroupEntry entries[RAYGPU_MAX_SHADER_TEXTURES*2];memset(entries,0,sizeof entries);bool valid=true;for(int slot=0;slot<RAYGPU_MAX_SHADER_TEXTURES;slot++){MRTexture *texture=mr_texture(command.textures[slot]);if(!texture||texture==target){valid=false;break;}entries[slot*2].binding=(uint32_t)slot*2;entries[slot*2].sampler=texture->customSampler?texture->customSampler:mr.sampler;entries[slot*2+1].binding=(uint32_t)slot*2+1;entries[slot*2+1].textureView=texture->view;}if(!valid)continue;
-        WGPUBindGroupDescriptor groupDesc=WGPU_BIND_GROUP_DESCRIPTOR_INIT;groupDesc.layout=mr.shaderTextureLayout;groupDesc.entryCount=RAYGPU_MAX_SHADER_TEXTURES*2;groupDesc.entries=entries;WGPUBindGroup materialGroup=wgpuDeviceCreateBindGroup(mr.device,&groupDesc);if(!materialGroup)continue;
+        WGPUBindGroupEntry entries[SARGPU_MAX_SHADER_TEXTURES*2];memset(entries,0,sizeof entries);bool valid=true;for(int slot=0;slot<SARGPU_MAX_SHADER_TEXTURES;slot++){MRTexture *texture=mr_texture(command.textures[slot]);if(!texture||texture==target){valid=false;break;}entries[slot*2].binding=(uint32_t)slot*2;entries[slot*2].sampler=texture->customSampler?texture->customSampler:mr.sampler;entries[slot*2+1].binding=(uint32_t)slot*2+1;entries[slot*2+1].textureView=texture->view;}if(!valid)continue;
+        WGPUBindGroupDescriptor groupDesc=WGPU_BIND_GROUP_DESCRIPTOR_INIT;groupDesc.layout=mr.shaderTextureLayout;groupDesc.entryCount=SARGPU_MAX_SHADER_TEXTURES*2;groupDesc.entries=entries;WGPUBindGroup materialGroup=wgpuDeviceCreateBindGroup(mr.device,&groupDesc);if(!materialGroup)continue;
         MRShaderEntry *shader=mr_shader(command.shader);wgpuRenderPassEncoderSetPipeline(pass,shader&&shader->pipeline3d?shader->pipeline3d:mr.pipeline3d);wgpuRenderPassEncoderSetVertexBuffer(pass,0,mesh->vertexBuffer,0,(uint64_t)mesh->vertexCount*sizeof(MRGpuVertex));wgpuRenderPassEncoderSetVertexBuffer(pass,1,mr.instanceBuffer3d,(uint64_t)command.firstInstance*sizeof(MRInstance3D),(uint64_t)command.instanceCount*sizeof(MRInstance3D));wgpuRenderPassEncoderSetBindGroup(pass,0,base->group,0,NULL);wgpuRenderPassEncoderSetBindGroup(pass,1,shader?shader->uniformGroup:mr.defaultUniformGroup3d,0,NULL);wgpuRenderPassEncoderSetBindGroup(pass,2,materialGroup,0,NULL);wgpuRenderPassEncoderSetBindGroup(pass,3,mr.sceneGroup3d,0,NULL);
         if(mesh->indexed&&mesh->indexBuffer){wgpuRenderPassEncoderSetIndexBuffer(pass,mesh->indexBuffer,WGPUIndexFormat_Uint16,0,(uint64_t)mesh->indexCount*sizeof(unsigned short));wgpuRenderPassEncoderDrawIndexed(pass,(uint32_t)mesh->indexCount,command.instanceCount,0,0,0);}else wgpuRenderPassEncoderDraw(pass,(uint32_t)mesh->vertexCount,command.instanceCount,0,0);wgpuBindGroupRelease(materialGroup);
     }
@@ -175,20 +175,20 @@ void CloseWindow(void) {
     for(int i=0;i<MR_MAX_MESHES;i++)if(mr.meshes[i].id){mr_web_mesh_unload(mr.meshes[i].id);memset(&mr.meshes[i],0,sizeof mr.meshes[i]);}
     mr_web_close();
 }
-MR_EXPORT("raygpu_key") void raygpu_key(int key,int down) { mr_key(key,down!=0); }
-MR_EXPORT("raygpu_char") void raygpu_char(int codepoint) {
+MR_EXPORT("sargpu_key") void sargpu_key(int key,int down) { mr_key(key,down!=0); }
+MR_EXPORT("sargpu_char") void sargpu_char(int codepoint) {
     if (codepoint>=32 && codepoint<=0x10ffff && mr.charQueueCount<16) mr.charQueue[mr.charQueueCount++]=codepoint;
 }
-MR_EXPORT("raygpu_focus") void raygpu_focus(int focused) {
+MR_EXPORT("sargpu_focus") void sargpu_focus(int focused) {
     mr.focused=focused!=0; if (!mr.focused) mr_clear_input();
 }
-MR_EXPORT("raygpu_mouse") void raygpu_mouse(float x,float y,int button,int down) {
+MR_EXPORT("sargpu_mouse") void sargpu_mouse(float x,float y,int button,int down) {
     mr_mouse(x,y); if (button>=0) mr_button(button,down!=0);
 }
-MR_EXPORT("raygpu_touch") void raygpu_touch(int id,int action,float x,float y) { mr_touch_event(id,action,x,y); }
-MR_EXPORT("raygpu_wheel") void raygpu_wheel(float x,float y) { mr.wheel.x+=x; mr.wheel.y+=y; }
-MR_EXPORT("raygpu_blur") void raygpu_blur(void) { mr_clear_input(); }
-MR_EXPORT("raygpu_frame") int raygpu_frame(void) {
+MR_EXPORT("sargpu_touch") void sargpu_touch(int id,int action,float x,float y) { mr_touch_event(id,action,x,y); }
+MR_EXPORT("sargpu_wheel") void sargpu_wheel(float x,float y) { mr.wheel.x+=x; mr.wheel.y+=y; }
+MR_EXPORT("sargpu_blur") void sargpu_blur(void) { mr_clear_input(); }
+MR_EXPORT("sargpu_frame") int sargpu_frame(void) {
     if (WindowShouldClose() || !mr.updateDraw) { CloseWindow(); return 0; }
     mr.updateDraw();
     if (mr.close) { CloseWindow(); return 0; }

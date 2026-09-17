@@ -1,4 +1,4 @@
-/* RayGPU audio module. Compiled through raygpu.c; do not compile separately. */
+/* SarGPU audio module. Compiled through sargpu.c; do not compile separately. */
 #define DR_MP3_NO_STDIO
 #define DR_MP3_NO_SIMD
 #define DRMP3_ASSERT(x) ((void)0)
@@ -72,7 +72,7 @@
 #undef PLAYBACK_MONO
 #undef PLAYBACK_LEFT
 #undef PLAYBACK_RIGHT
-/* Bundled tracker decoders. File I/O is disabled because RayGPU feeds memory. */
+/* Bundled tracker decoders. File I/O is disabled because SarGPU feeds memory. */
 #define JARXM_MALLOC(sz) MemAlloc((unsigned int)(sz))
 #define JARXM_FREE(p) MemFree(p)
 #define JAR_XM_NO_STDIO
@@ -205,7 +205,7 @@ static unsigned char *mr_wave_file(Wave wave,unsigned int *outSize){
 bool ExportWave(Wave wave,const char *fileName){unsigned int size=0;unsigned char *data=mr_wave_file(wave,&size);if(!data)return false;bool result=SaveFileData(fileName,data,(int)size);MemFree(data);return result;}
 bool ExportWaveAsCode(Wave wave,const char *fileName){
     unsigned int size=0;unsigned char *data=mr_wave_file(wave,&size);if(!data)return false;size_t capacity=(size_t)size*6+256;char *text=MemAlloc((unsigned int)capacity);if(!text){MemFree(data);return false;}
-    const char *head="/* Wave data exported by RayGPU */\nstatic const unsigned char WAVE_DATA[] = {\n";size_t at=0;while(head[at]){text[at]=head[at];at++;}
+    const char *head="/* Wave data exported by SarGPU */\nstatic const unsigned char WAVE_DATA[] = {\n";size_t at=0;while(head[at]){text[at]=head[at];at++;}
     static const char hex[]="0123456789abcdef";for(unsigned int i=0;i<size;i++){if((i&15)==0){text[at++]=' ';text[at++]=' ';}text[at++]='0';text[at++]='x';text[at++]=hex[data[i]>>4];text[at++]=hex[data[i]&15];if(i+1<size)text[at++]=',';if((i&15)==15||i+1==size)text[at++]='\n';}
     const char *tail="};\nstatic const unsigned int WAVE_DATA_SIZE = sizeof(WAVE_DATA);\n";for(size_t i=0;tail[i];i++)text[at++]=tail[i];bool result=SaveFileData(fileName,text,(int)at);MemFree(text);MemFree(data);return result;
 }

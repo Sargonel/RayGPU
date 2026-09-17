@@ -1,10 +1,10 @@
-/* RayGPU textures module. Compiled through raygpu.c; do not compile separately. */
+/* SarGPU textures module. Compiled through sargpu.c; do not compile separately. */
 static Image mr_load_qoi(const unsigned char *data,int size);
 static Image mr_load_dds(const unsigned char *data,int size);
 #ifdef __INTELLISENSE__
 /* IntelliSense can lose preprocessor state inside stb_image's deeply nested
  * implementation and then report false missing-#endif errors for this file.
- * It only needs the decoder entry point to understand RayGPU below. */
+ * It only needs the decoder entry point to understand SarGPU below. */
 unsigned char *stbi_load_from_memory(const unsigned char *buffer,int length,
     int *width,int *height,int *channelsInFile,int desiredChannels);
 unsigned char *stbi_load_gif_from_memory(const unsigned char *buffer,int length,

@@ -1,6 +1,6 @@
 # Bundled external code
 
-RayGPU vendors these source files so applications do not need separate image,
+SarGPU vendors these source files so applications do not need separate image,
 font, audio, or model-decoder installations. Each file retains its original
 copyright and license notice.
 
@@ -14,6 +14,6 @@ copyright and license notice.
 | `m3d.h` | MIT |
 | `meshopt_decode.h` | MIT |
 
-Small conditional-compilation changes let the decoders use RayGPU's allocator
+Small conditional-compilation changes let the decoders use SarGPU's allocator
 and compile in its freestanding WebAssembly build. Those integration changes
 do not replace or remove the upstream license notices.

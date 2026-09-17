@@ -36,14 +36,14 @@ jobs:
             -Wl,-z,stack-size=1048576 \
             -Wl,--initial-memory=67108864 \
             -Wl,--max-memory=2147483648 \
-            examples/main.c examples/snake.c examples/basic_3d.c src/raygpu.c \
+            examples/main.c examples/snake.c examples/basic_3d.c src/sargpu.c \
             -o dist/main.wasm
           cp shell.html dist/index.html
-          cp src/raygpu.js dist/raygpu.js
+          cp src/sargpu.js dist/sargpu.js
           mkdir -p dist/examples/assets
           cp examples/assets/example.glb dist/examples/assets/example.glb
-          sed -i "s|raygpu.js|raygpu.js?rev=${GITHUB_SHA}|" dist/index.html
-          sed -i "s|fetch(\"main.wasm\")|fetch(\"main.wasm?rev=${GITHUB_SHA}\", { cache: \"no-cache\" })|" dist/raygpu.js
+          sed -i "s|sargpu.js|sargpu.js?rev=${GITHUB_SHA}|" dist/index.html
+          sed -i "s|fetch(\"main.wasm\")|fetch(\"main.wasm?rev=${GITHUB_SHA}\", { cache: \"no-cache\" })|" dist/sargpu.js
           touch dist/.nojekyll
 
       - name: Configure GitHub Pages

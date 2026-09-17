@@ -1,14 +1,14 @@
-# RayGPU
+# SarGPU
 
-RayGPU is an independent, modular 2D/3D C library inspired by raylib and
+SarGPU is an independent, modular 2D/3D C library inspired by raylib and
 built around WebGPU. The same C source can compile as a native Windows program
 or as freestanding WebAssembly for a browser.
 
-**[Run the example catalog in your browser](https://sargonel.github.io/RayGPU/)**
+**[Run the example catalog in your browser](https://sargonel.github.io/SarGPU/)**
 
 The web build does **not** use Emscripten, WASI, Node.js, or a package manager.
 Native Windows rendering uses Dawn with D3D12. Browser rendering uses WebGPU
-through the small `raygpu.js` platform bridge.
+through the small `sargpu.js` platform bridge.
 
 Its familiar C API covers windowing, input, 2D drawing, audio, images, fonts,
 shaders, meshes, glTF 2.0 models, skeletal animation, configurable lighting,
@@ -16,28 +16,28 @@ fog, PBR materials, and skyboxes. VR and stereo rendering are outside its scope.
 
 ## Quick start
 
-Include the public header in your game code. The makefiles compile `src/raygpu.c` separately; no implementation macro is needed:
+Include the public header in your game code. The makefiles compile `src/sargpu.c` separately; no implementation macro is needed:
 
 ```c
-#include "raygpu.h"
+#include "sargpu.h"
 
 static void GameFrame(void)
 {
     BeginDrawing();
         ClearBackground(RAYWHITE);
-        DrawText("Hello from RayGPU", 20, 20, 30, DARKBLUE);
+        DrawText("Hello from SarGPU", 20, 20, 30, DARKBLUE);
         DrawCircle(400, 225, 50, SKYBLUE);
     EndDrawing();
 }
 
 int main(void)
 {
-    InitWindow(800, 450, "RayGPU");
+    InitWindow(800, 450, "SarGPU");
     if (!IsWindowReady()) return 1;
 
     SetTargetFPS(60);
     RunMainLoop(GameFrame);
-    return RayGPUHadError() ? 1 : 0;
+    return SarGPUHadError() ? 1 : 0;
 }
 ```
 
@@ -49,20 +49,20 @@ creating the window:
 
 ```c
 SetConfigFlags(FLAG_WINDOW_RESIZABLE);
-InitWindow(800, 450, "Resizable RayGPU window");
+InitWindow(800, 450, "Resizable SarGPU window");
 ```
 
 ## Source layout
 
-`src/raygpu.h` is the public API. Add `src/` to the compiler include path and
-compile `src/raygpu.c` once alongside your application. It assembles the core,
+`src/sargpu.h` is the public API. Add `src/` to the compiler include path and
+compile `src/sargpu.c` once alongside your application. It assembles the core,
 shapes, textures, text, audio, models, and renderer modules in one translation
 unit so they can share private state. Do not compile the module `.c` files
-individually or define `RAYGPU_IMPLEMENTATION` in application code.
+individually or define `SARGPU_IMPLEMENTATION` in application code.
 
 Third-party image/font code and its license notices live in `src/external/`.
-The browser bridge is `src/raygpu.js`; web builds copy it beside `main.wasm`
-and `index.html`. Keep the complete `src/` directory when using RayGPU.
+The browser bridge is `src/sargpu.js`; web builds copy it beside `main.wasm`
+and `index.html`. Keep the complete `src/` directory when using SarGPU.
 
 ## Requirements
 
@@ -71,7 +71,7 @@ Native Windows builds require:
 - Clang with C17 support.
 - Windows 10 or newer with a D3D12-capable GPU.
 
-Install RayGPU's pinned Windows x64 Dawn SDK once, then build normally:
+Install SarGPU's pinned Windows x64 Dawn SDK once, then build normally:
 
 ```powershell
 .\setup-dawn.ps1
@@ -79,7 +79,7 @@ make run
 ```
 
 The installer downloads
-[`raygpu-dawn-sdk-windows-x64-be6033b.zip`](https://github.com/Sargonel/RayGPU/releases/download/dawn-sdk-be6033b/raygpu-dawn-sdk-windows-x64-be6033b.zip),
+[`sargpu-dawn-sdk-windows-x64-be6033b.zip`](https://github.com/Sargonel/SarGPU/releases/download/dawn-sdk-be6033b/sargpu-dawn-sdk-windows-x64-be6033b.zip),
 verifies the archive and library SHA-256 checksums, and extracts it to the
 gitignored `.deps/dawn-sdk` directory. The package contains only the public and
 generated headers, monolithic `webgpu_dawn.lib`, build metadata, and required
@@ -185,7 +185,7 @@ source works natively and in the browser.
 ```text
 build/web/
 |-- index.html
-|-- raygpu.js
+|-- sargpu.js
 |-- main.wasm
 `-- assets/
 ```
@@ -199,7 +199,7 @@ Upload the contents of `build/web` to any static host. The host must:
 The server does not need Emscripten, Dawn, Node.js, PowerShell, or a C compiler.
 Opening `index.html` through a `file://` URL is not supported.
 
-The web bridge uses `window.devicePixelRatio` so one logical RayGPU pixel maps
+The web bridge uses `window.devicePixelRatio` so one logical SarGPU pixel maps
 to one physical display pixel when the canvas fits. If the browser viewport is
 smaller, the canvas shrinks uniformly to the largest size that preserves its
 aspect ratio. Browser zoom, window resizing, and monitor DPI changes update the
@@ -207,12 +207,12 @@ display size automatically.
 
 Browser fullscreen uses the Fullscreen API and therefore follows the browser's
 user-gesture rules. If a fullscreen request is rejected outside a gesture,
-RayGPU retries it on the next key press or pointer press. Browsers expose one
+SarGPU retries it on the next key press or pointer press. Browsers expose one
 current display through the synchronous monitor API; physical millimeter sizes
 return zero when the browser does not provide them. Clipboard reads return the
-latest text made available by a RayGPU write, the Clipboard API, or a paste
+latest text made available by a SarGPU write, the Clipboard API, or a paste
 event. Dropped browser files receive virtual names that can be passed directly
-to RayGPU file-loading functions.
+to SarGPU file-loading functions.
 
 ## Supported features
 
@@ -289,11 +289,11 @@ to RayGPU file-loading functions.
   CPU-backed textures synchronously on every platform. Render textures and the
   screen use the portable callback APIs `LoadImageFromTextureAsync()` and
   `LoadImageFromScreenAsync()` because browser WebGPU readback is asynchronous.
-  RayGPU queues callbacks on every platform, so they never run before the
+  SarGPU queues callbacks on every platform, so they never run before the
   request function returns. The callback owns the returned `Image` and releases
   it with `UnloadImage()`. Browser screenshots download a PNG.
 
-Async image callbacks are dispatched from RayGPU's main-loop processing during
+Async image callbacks are dispatched from SarGPU's main-loop processing during
 `WindowShouldClose()` or `BeginDrawing()`. An application waiting for readback
 must continue running one of those functions; a blocking loop that calls
 neither cannot dispatch the callback. The callback owns `image.data`, including
@@ -338,7 +338,7 @@ with their original public-domain/MIT licenses. Audio decoding uses bundled
 under their original licenses. These are also used or bundled by raylib; users
 do not install them separately.
 M3D importing uses the bundled Model3D SDK in `src/external/m3d.h`, under its
-original MIT license. All importers use RayGPU's file and memory APIs on native
+original MIT license. All importers use SarGPU's file and memory APIs on native
 and web builds; no additional installation is needed.
 Meshopt decoding uses a scalar C17 port of meshoptimizer v0.22's decoders,
 bundled in `src/external/meshopt_decode.h` with the original MIT license.
@@ -361,7 +361,7 @@ Texture shaders use group 0:
 | 0 | filtering sampler |
 | 1 | `texture_2d<f32>` |
 
-Custom shaders can bind up to `RAYGPU_MAX_SHADER_TEXTURES` additional textures
+Custom shaders can bind up to `SARGPU_MAX_SHADER_TEXTURES` additional textures
 through group 2. Each slot uses two bindings:
 
 | Slot | Sampler binding | Texture binding |
@@ -373,7 +373,7 @@ through group 2. Each slot uses two bindings:
 Declare the pair in WGSL and give the texture a stable location name:
 
 ```wgsl
-// @raygpu_sampler maskTexture 0
+// @sargpu_sampler maskTexture 0
 @group(2) @binding(0) var maskSampler: sampler;
 @group(2) @binding(1) var maskTexture: texture_2d<f32>;
 ```
@@ -385,10 +385,10 @@ int maskLoc = GetShaderLocation(shader, "maskTexture");
 SetShaderValueTexture(shader, maskLoc, mask);
 ```
 
-RayGPU also reflects direct WGSL vertex parameters, so
+SarGPU also reflects direct WGSL vertex parameters, so
 `GetShaderLocationAttrib(shader, "position")` returns the number from
 `@location(...)`. Shaders that pass a vertex-input structure can declare the
-same metadata explicitly with `// @raygpu_attribute position 0`.
+same metadata explicitly with `// @sargpu_attribute position 0`.
 
 Optional uniforms use a 2048-byte buffer at group 1, binding 0. Declare it as:
 
@@ -403,8 +403,8 @@ that location.
 For stable, validated names, declare each location in a WGSL comment:
 
 ```wgsl
-// @raygpu_uniform tint 0
-// @raygpu_uniform time 1
+// @sargpu_uniform tint 0
+// @sargpu_uniform time 1
 ```
 
 Then ordinary raylib-style code resolves those declared names:
@@ -416,7 +416,7 @@ int typoLoc = GetShaderLocation(shader, "tiem");  // -1
 ```
 
 Declarations can appear in either shader stage and do not depend on the order
-of `GetShaderLocation()` calls. If a shader contains no declarations, RayGPU
+of `GetShaderLocation()` calls. If a shader contains no declarations, SarGPU
 keeps the earlier compatibility behavior and assigns locations in first-use
 order. New shaders should use declarations so misspellings are detected and C
 and WGSL stay synchronized. The sampler and uniform snippets above show the
@@ -449,7 +449,7 @@ material map can populate it directly. `BeginShaderMode()` is for 2D shaders;
 assign a material shader through `Material.shader`.
 
 `DrawSkybox()` accepts a normal 2D equirectangular panorama. Call it between
-`BeginMode3D()` and `EndMode3D()` before or after the scene geometry; RayGPU
+`BeginMode3D()` and `EndMode3D()` before or after the scene geometry; SarGPU
 always renders it behind the geometry.
 
 ## Remaining core, 2D, and audio work
@@ -487,12 +487,12 @@ always renders it behind the geometry.
   with `UnloadImage(image)`. Choose playback timing in your game code.
 - The built-in font contains a small ASCII subset; use a TTF/OTF font for wider
   Unicode coverage.
-- RayGPU supports 256 simultaneous texture slots, 32 custom shaders, eight
+- SarGPU supports 256 simultaneous texture slots, 32 custom shaders, eight
   material samplers, eight scene lights, 16,384 bone matrices per frame, and
   262,144 vertices per frame.
 
 ## License
 
-RayGPU is distributed under the MIT license. See [`LICENSE`](LICENSE).
+SarGPU is distributed under the MIT license. See [`LICENSE`](LICENSE).
 The stb, Model3D, and meshoptimizer licenses remain included in their headers
 under `src/external/`.
