@@ -25,7 +25,7 @@ MR_IMPORT("drop_count") int mr_web_drop_count(void);
 MR_IMPORT("drop_name_size") int mr_web_drop_name_size(int index);
 MR_IMPORT("drop_name") int mr_web_drop_name(int index,char *text,int size);
 MR_IMPORT("drop_clear") void mr_web_drop_clear(void);
-MR_IMPORT("present") void mr_web_present(const void *vertices,int vertexCount,const void *batches,int batchCount,const void *draws3d,int drawCount,const void *instances3d,int instanceCount,int color,unsigned int target);
+MR_IMPORT("present") void mr_web_present(const void *vertices,int vertexCount,const void *batches,int batchCount,const void *draws3d,int drawCount,const void *instances3d,int instanceCount,int color,unsigned int target,const void *scene3d,const void *bones,int boneCount,unsigned int skybox,int skyboxTint);
 MR_IMPORT("mesh_upload") void mr_web_mesh_upload(unsigned int id,const void *vertices,int vertexCount,const void *indices,int indexCount);
 MR_IMPORT("mesh_update") void mr_web_mesh_update(unsigned int id,const void *vertices,int vertexCount);
 MR_IMPORT("mesh_unload") void mr_web_mesh_unload(unsigned int id);
@@ -35,6 +35,7 @@ MR_IMPORT("texture_readback") int mr_web_texture_readback(unsigned int id,unsign
 MR_IMPORT("screen_readback") int mr_web_screen_readback(unsigned int requestId);
 MR_IMPORT("render_texture") void mr_web_render_texture(unsigned int id,int width,int height);
 MR_IMPORT("shader_load") int mr_web_shader_load(unsigned int id,const char *vsCode,const char *fsCode);
+MR_IMPORT("material_shader_load") int mr_web_material_shader_load(unsigned int id,const char *vsCode,const char *fsCode);
 MR_IMPORT("shader_unload") void mr_web_shader_unload(unsigned int id);
 MR_IMPORT("shader_uniform") void mr_web_shader_uniform(unsigned int id,int location,const void *data,int size);
 MR_IMPORT("shader_texture") void mr_web_shader_texture(unsigned int id,int location,unsigned int textureId);
@@ -132,6 +133,7 @@ static int puts(const char *s) { mr_log(s); return 0; }
 #define MR_GAMEPAD_BUTTONS 18
 #define MR_GAMEPAD_AXES 6
 #define MR_MAX_TOUCH_POINTS 10
+#define MR_MAX_BONE_MATRICES_FRAME 16384
 #define MR_PI 3.14159265358979323846f
 #define MR_DEG2RAD (MR_PI/180.0f)
 static void mr_dispatch_readbacks(void);
@@ -146,9 +148,9 @@ typedef struct MRTexture {
 } MRTexture;
 typedef struct MRShaderEntry {
 #ifdef _WIN32
-    WGPURenderPipeline pipelines[6]; WGPUBuffer uniformBuffer; WGPUBindGroup uniformGroup,textureGroup;
+    WGPURenderPipeline pipelines[6],pipeline3d; WGPUBuffer uniformBuffer; WGPUBindGroup uniformGroup,textureGroup;
 #endif
-    unsigned int id,nameHashes[32]; unsigned char nameSlots[32]; int locationCount; bool explicitLocations; unsigned char uniforms[32][64];
+    unsigned int id,nameHashes[32]; unsigned char nameSlots[32]; int locationCount; bool explicitLocations,materialShader; unsigned char uniforms[32][64];
     unsigned int attributeHashes[16],extraTextures[RAYGPU_MAX_SHADER_TEXTURES]; unsigned char attributeSlots[16]; int attributeCount;
 } MRShaderEntry;
 typedef struct MRBatch { unsigned int first,count,texture,blend,shader,x,y,width,height; } MRBatch;
@@ -157,9 +159,20 @@ typedef struct MRGamepadState {
     float axes[MR_GAMEPAD_AXES]; char name[128]; double vibrationEnd;
 } MRGamepadState;
 typedef struct MRTouchPoint { int id; Vector2 position; } MRTouchPoint;
-typedef struct MRGpuVertex { float x,y,z,nx,ny,nz,u,v; unsigned char r,g,b,a; } MRGpuVertex;
-typedef struct MRInstance3D { Matrix model,viewProjection; Color tint; float padding[3]; Vector3 camera; float cameraPadding; } MRInstance3D;
-typedef struct MRDraw3D { unsigned int mesh,texture,firstInstance,instanceCount; } MRDraw3D;
+typedef struct MRGpuVertex {
+    float x,y,z,nx,ny,nz,u,v; unsigned char r,g,b,a,boneIds[4];
+    float boneWeights[4],tangent[4],u2,v2;
+} MRGpuVertex;
+typedef struct MRInstance3D {
+    Matrix model; Color tint; float tintPadding[3]; float material[4];
+    Color emission; float emissionPadding[3]; unsigned int skin[4];
+} MRInstance3D;
+typedef struct MRDraw3D { unsigned int mesh,firstInstance,instanceCount,shader,textures[RAYGPU_MAX_SHADER_TEXTURES]; } MRDraw3D;
+typedef struct MRLightGPU { Vector4 positionType,directionRange,colorIntensity,spotEnabled; } MRLightGPU;
+typedef struct MRScene3D {
+    Matrix viewProjection; Vector4 camera,ambient,fogColor,fogParams;
+    Vector4 skyRight,skyUp,skyForward,settings; MRLightGPU lights[RAYGPU_MAX_LIGHTS];
+} MRScene3D;
 typedef struct MRMeshEntry {
 #ifdef _WIN32
     WGPUBuffer vertexBuffer,indexBuffer;
@@ -168,24 +181,27 @@ typedef struct MRMeshEntry {
 } MRMeshEntry;
 _Static_assert(sizeof(MRVertex)==24,"Vertex layout must match raygpu.js");
 _Static_assert(sizeof(MRBatch)==36,"Batch layout must match raygpu.js");
-_Static_assert(sizeof(MRGpuVertex)==36,"3D vertex layout must match raygpu.js");
-_Static_assert(sizeof(MRInstance3D)==160,"3D instance layout must match raygpu.js");
-_Static_assert(sizeof(MRDraw3D)==16,"3D command layout must match raygpu.js");
+_Static_assert(sizeof(MRGpuVertex)==80,"3D vertex layout must match raygpu.js");
+_Static_assert(sizeof(MRInstance3D)==128,"3D instance layout must match raygpu.js");
+_Static_assert(sizeof(MRDraw3D)==48,"3D command layout must match raygpu.js");
+_Static_assert(sizeof(MRScene3D)==704,"3D scene layout must match raygpu.js");
 static struct {
     void (*updateDraw)(void);
 #ifdef _WIN32
     WGPUInstance instance; WGPUAdapter adapter; WGPUDevice device; WGPUQueue queue;
     WGPUSurface surface; WGPUSurfaceConfiguration config;
-    WGPURenderPipeline pipelines[6],pipeline3d; WGPUBuffer buffer,instanceBuffer3d;
+    WGPURenderPipeline pipelines[6],pipeline3d,skyboxPipeline; WGPUBuffer buffer,instanceBuffer3d,sceneBuffer3d,boneBuffer3d,defaultUniformBuffer3d;
     WGPUTexture depthTexture; WGPUTextureView depthView; int depthWidth,depthHeight;
-    WGPUBindGroupLayout textureLayout,uniformLayout,shaderTextureLayout; WGPUSampler sampler;
+    WGPUBindGroupLayout textureLayout,uniformLayout,shaderTextureLayout,sceneLayout3d; WGPUBindGroup sceneGroup3d,defaultUniformGroup3d; WGPUPipelineLayout materialPipelineLayout; WGPUSampler sampler;
 #endif
     MRTexture textures[MR_MAX_TEXTURES]; unsigned int nextTexture,white;
     MRMeshEntry meshes[MR_MAX_MESHES]; unsigned int nextMesh;
     MRShaderEntry shaders[32]; unsigned int nextShader,currentShader;
     MRVertex vertices[MR_MAX_VERTICES]; MRBatch batches[MR_MAX_VERTICES/3];
     MRDraw3D draws3d[MR_MAX_3D_DRAWS]; MRInstance3D instances3d[MR_MAX_3D_INSTANCES];
-    unsigned int vertexCount,batchCount,drawCount3d,instanceCount3d;
+    MRScene3D scene3d; Matrix boneMatricesFrame[MR_MAX_BONE_MATRICES_FRAME];
+    unsigned int vertexCount,batchCount,drawCount3d,instanceCount3d,boneMatrixCount3d,skyboxTexture; Color skyboxTint;
+    Light3D lights[RAYGPU_MAX_LIGHTS]; Color ambientColor,fogColor; float ambientIntensity,fogStart,fogEnd,fogDensity; int fogMode; bool pbrEnabled;
     bool ready,close,error,drawing,adapterDone,deviceDone,overflow,softwareFrameLimit,resized,focused;
     bool keys[512],pressed[512],repeated[512],released[512];
     bool buttons[7],clicked[7],buttonReleased[7];

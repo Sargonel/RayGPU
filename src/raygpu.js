@@ -9,7 +9,7 @@
     const shaders = new Map();
     const meshes = new Map();
     const events = new AbortController();
-    let device, context, buffer, instanceBuffer3d, wasm, pipelines, pipeline3d, sampler, textureLayout, uniformLayout, shaderTextureLayout, defaultPipelineLayout, pipelineLayout, audioContext, masterGain;
+    let device, context, buffer, instanceBuffer3d, sceneBuffer3d, boneBuffer3d, sceneGroup3d, defaultUniformBuffer3d, defaultUniformGroup3d, wasm, pipelines, pipeline3d, skyboxPipeline, sampler, textureLayout, uniformLayout, shaderTextureLayout, sceneLayout3d, defaultPipelineLayout, pipelineLayout, materialPipelineLayout, audioContext, masterGain;
     let depthTexture, depthWidth=0, depthHeight=0;
     const sounds = new Map();
     let stopped = false, targetFPS = 60, lastFrame, fullscreenPending = 0, fullscreenMode = 0;
@@ -52,6 +52,9 @@
         meshes.clear();
         if (buffer) buffer.destroy();
         if (instanceBuffer3d) instanceBuffer3d.destroy();
+        if (sceneBuffer3d) sceneBuffer3d.destroy();
+        if (boneBuffer3d) boneBuffer3d.destroy();
+        if (defaultUniformBuffer3d) defaultUniformBuffer3d.destroy();
         if (depthTexture) depthTexture.destroy();
         if (context) context.unconfigure();
         if (device) device.destroy();
@@ -112,8 +115,13 @@
         shaderTextureLayout=device.createBindGroupLayout({entries:Array.from({length:16},(_,binding)=>binding%2===0?
             {binding,visibility:GPUShaderStage.FRAGMENT,sampler:{type:"filtering"}}:
             {binding,visibility:GPUShaderStage.FRAGMENT,texture:{sampleType:"float",viewDimension:"2d"}})});
+        sceneLayout3d=device.createBindGroupLayout({entries:[
+            {binding:0,visibility:GPUShaderStage.VERTEX|GPUShaderStage.FRAGMENT,buffer:{type:"uniform",minBindingSize:704}},
+            {binding:1,visibility:GPUShaderStage.VERTEX,buffer:{type:"read-only-storage",minBindingSize:64}}
+        ]});
         defaultPipelineLayout=device.createPipelineLayout({bindGroupLayouts:[textureLayout]});
         pipelineLayout=device.createPipelineLayout({bindGroupLayouts:[textureLayout,uniformLayout,shaderTextureLayout]});
+        materialPipelineLayout=device.createPipelineLayout({bindGroupLayouts:[textureLayout,uniformLayout,shaderTextureLayout,sceneLayout3d]});
         const pipelineDescriptor = blend => ({layout:defaultPipelineLayout,
             vertex:{module:shader,entryPoint:"vs",buffers:[{arrayStride:24,attributes:[
                 {shaderLocation:0,offset:0,format:"float32x2"},{shaderLocation:1,offset:8,format:"float32x2"},
@@ -161,7 +169,25 @@
             fragment:{module:shader3d,entryPoint:"fs",targets:[{format,blend:blendStates[0]}]},
             primitive:{topology:"triangle-list",cullMode:"none"},
             depthStencil:{format:"depth24plus",depthWriteEnabled:true,depthCompare:"less"}});
-        instanceBuffer3d=device.createBuffer({size:8192*160,usage:GPUBufferUsage.VERTEX|GPUBufferUsage.COPY_DST});
+        instanceBuffer3d=device.createBuffer({size:8192*128,usage:GPUBufferUsage.VERTEX|GPUBufferUsage.COPY_DST});
+        sceneBuffer3d=device.createBuffer({size:704,usage:GPUBufferUsage.UNIFORM|GPUBufferUsage.COPY_DST});
+        boneBuffer3d=device.createBuffer({size:16384*64,usage:GPUBufferUsage.STORAGE|GPUBufferUsage.COPY_DST});
+        sceneGroup3d=device.createBindGroup({layout:sceneLayout3d,entries:[{binding:0,resource:{buffer:sceneBuffer3d,size:704}},{binding:1,resource:{buffer:boneBuffer3d,size:16384*64}}]});
+        defaultUniformBuffer3d=device.createBuffer({size:2048,usage:GPUBufferUsage.UNIFORM|GPUBufferUsage.COPY_DST});defaultUniformGroup3d=device.createBindGroup({layout:uniformLayout,entries:[{binding:0,resource:{buffer:defaultUniformBuffer3d,size:2048}}]});
+        const advanced3d=device.createShaderModule({code:`
+struct Light{positionType:vec4f,directionRange:vec4f,colorIntensity:vec4f,spotEnabled:vec4f};
+struct Scene{vp:mat4x4f,camera:vec4f,ambient:vec4f,fogColor:vec4f,fog:vec4f,skyRight:vec4f,skyUp:vec4f,skyForward:vec4f,settings:vec4f,lights:array<Light,8>};
+struct V{@builtin(position)position:vec4f,@location(0)uv:vec2f,@location(1)uv2:vec2f,@location(2)color:vec4f,@location(3)normal:vec3f,@location(4)tangent:vec4f,@location(5)world:vec3f,@location(6)material:vec4f,@location(7)emission:vec4f,@location(8)@interpolate(flat)flags:u32};
+@group(2)@binding(0)var s0:sampler;@group(2)@binding(1)var t0:texture_2d<f32>;@group(2)@binding(2)var s1:sampler;@group(2)@binding(3)var t1:texture_2d<f32>;@group(2)@binding(4)var s2:sampler;@group(2)@binding(5)var t2:texture_2d<f32>;@group(2)@binding(6)var s3:sampler;@group(2)@binding(7)var t3:texture_2d<f32>;@group(2)@binding(8)var s4:sampler;@group(2)@binding(9)var t4:texture_2d<f32>;@group(2)@binding(10)var s5:sampler;@group(2)@binding(11)var t5:texture_2d<f32>;@group(2)@binding(12)var s6:sampler;@group(2)@binding(13)var t6:texture_2d<f32>;@group(2)@binding(14)var s7:sampler;@group(2)@binding(15)var t7:texture_2d<f32>;
+@group(3)@binding(0)var<uniform>scene:Scene;@group(3)@binding(1)var<storage,read>bones:array<mat4x4f>;
+@vertex fn vs(@location(0)p0:vec3f,@location(1)n0:vec3f,@location(2)uv:vec2f,@location(3)c:vec4f,@location(4)ids:vec4u,@location(5)weights:vec4f,@location(6)tan:vec4f,@location(7)uv2:vec2f,@location(8)m0:vec4f,@location(9)m1:vec4f,@location(10)m2:vec4f,@location(11)m3:vec4f,@location(12)tint:vec4f,@location(13)material:vec4f,@location(14)emission:vec4f,@location(15)skin:vec4u)->V{var p=vec4f(p0,1);var n=n0;var tangent=tan.xyz;if(skin.y>0u&&dot(weights,vec4f(1))>0){let sm=bones[skin.x+ids.x]*weights.x+bones[skin.x+ids.y]*weights.y+bones[skin.x+ids.z]*weights.z+bones[skin.x+ids.w]*weights.w;p=p*sm;n=(vec4f(n,0)*sm).xyz;tangent=(vec4f(tangent,0)*sm).xyz;}let model=mat4x4f(m0,m1,m2,m3);let world=p*model;var o:V;o.position=world*scene.vp;o.uv=uv;o.uv2=uv2;o.color=c*tint;o.normal=normalize((vec4f(n,0)*model).xyz);o.tangent=vec4f(normalize((vec4f(tangent,0)*model).xyz),tan.w);o.world=world.xyz;o.material=material;o.emission=emission;o.flags=skin.z;return o;}
+fn F(c:f32,f0:vec3f)->vec3f{return f0+(vec3f(1)-f0)*pow(1-c,5);}fn D(nh:f32,r:f32)->f32{let a=r*r;let a2=a*a;let d=nh*nh*(a2-1)+1;return a2/(3.14159265*d*d+0.0001);}fn G(nv:f32,nl:f32,r:f32)->f32{let k=(r+1)*(r+1)/8;return nv/(nv*(1-k)+k)*nl/(nl*(1-k)+k);}
+@fragment fn fs(v:V,@builtin(front_facing)front:bool)->@location(0)vec4f{let a=textureSample(t0,s0,v.uv)*v.color;let ms=textureSample(t1,s1,v.uv);let ns=textureSample(t2,s2,v.uv);let mrs=textureSample(t3,s3,v.uv);let aos=textureSample(t4,s4,v.uv2);let es=textureSample(t5,s5,v.uv);var n=normalize(v.normal)*select(-1.0,1.0,front);if((v.flags&4u)!=0u){let tn=ns.xyz*2-1;let T=normalize(v.tangent.xyz);let B=normalize(cross(n,T)*v.tangent.w);n=normalize(mat3x3f(T,B,n)*vec3f(tn.xy*v.material.z,tn.z));}var metal=clamp(v.material.x,0,1);var rough=clamp(v.material.y,0.04,1);if((v.flags&2u)!=0u){metal*=ms.r;}if((v.flags&8u)!=0u){metal*=mrs.b;rough*=mrs.g;}let ao=select(1.0,aos.r,(v.flags&16u)!=0u);let view=normalize(scene.camera.xyz-v.world);let nv=max(dot(n,view),0.001);let f0=mix(vec3f(0.04),a.rgb,metal);var color=scene.ambient.rgb*scene.ambient.a*a.rgb*ao;for(var i=0u;i<8u;i++){let light=scene.lights[i];if(light.spotEnabled.z<0.5){continue;}var L=-light.directionRange.xyz;var atten=1.0;if(light.positionType.w>0.5){let delta=light.positionType.xyz-v.world;let dist=length(delta);L=delta/max(dist,0.0001);if(light.directionRange.w>0){atten*=pow(clamp(1-dist/light.directionRange.w,0,1),2);}if(light.positionType.w>1.5){atten*=smoothstep(light.spotEnabled.y,light.spotEnabled.x,dot(-L,normalize(light.directionRange.xyz)));}}let nl=max(dot(n,L),0);if(nl<=0){continue;}let radiance=light.colorIntensity.rgb*light.colorIntensity.a*atten;if(scene.settings.x>0.5){let H=normalize(view+L);let fr=F(max(dot(view,H),0),f0);let spec=D(max(dot(n,H),0),rough)*G(nv,nl,rough)*fr/max(4*nv*nl,0.001);color+=((vec3f(1)-fr)*(1-metal)*a.rgb/3.14159265+spec)*radiance*nl;}else{color+=a.rgb*radiance*nl;}}color+=es.rgb*v.emission.rgb*v.material.w;let dist=length(scene.camera.xyz-v.world);var fog=0.0;if(scene.fog.x==1){fog=clamp((dist-scene.fog.y)/max(scene.fog.z-scene.fog.y,0.001),0,1);}else if(scene.fog.x==2){fog=1-exp(-scene.fog.w*dist);}else if(scene.fog.x==3){let d=scene.fog.w*dist;fog=1-exp(-d*d);}return vec4f(mix(color,scene.fogColor.rgb,clamp(fog,0,1)),a.a);}`});
+        const meshLayout=[{arrayStride:80,stepMode:"vertex",attributes:[{shaderLocation:0,offset:0,format:"float32x3"},{shaderLocation:1,offset:12,format:"float32x3"},{shaderLocation:2,offset:24,format:"float32x2"},{shaderLocation:3,offset:32,format:"unorm8x4"},{shaderLocation:4,offset:36,format:"uint8x4"},{shaderLocation:5,offset:40,format:"float32x4"},{shaderLocation:6,offset:56,format:"float32x4"},{shaderLocation:7,offset:72,format:"float32x2"}]},{arrayStride:128,stepMode:"instance",attributes:[{shaderLocation:8,offset:0,format:"float32x4"},{shaderLocation:9,offset:16,format:"float32x4"},{shaderLocation:10,offset:32,format:"float32x4"},{shaderLocation:11,offset:48,format:"float32x4"},{shaderLocation:12,offset:64,format:"unorm8x4"},{shaderLocation:13,offset:80,format:"float32x4"},{shaderLocation:14,offset:96,format:"unorm8x4"},{shaderLocation:15,offset:112,format:"uint32x4"}]}];
+        const materialPipelineDescriptor=(vs,fs)=>({layout:materialPipelineLayout,vertex:{module:vs,entryPoint:"vs",buffers:meshLayout},fragment:{module:fs,entryPoint:"fs",targets:[{format,blend:blendStates[0]}]},primitive:{topology:"triangle-list",cullMode:"none"},depthStencil:{format:"depth24plus",depthWriteEnabled:true,depthCompare:"less-equal"}});
+        pipeline3d=await device.createRenderPipelineAsync(materialPipelineDescriptor(advanced3d,advanced3d));
+        const skyShader=device.createShaderModule({code:`struct Scene{vp:mat4x4f,camera:vec4f,ambient:vec4f,fogColor:vec4f,fog:vec4f,skyRight:vec4f,skyUp:vec4f,skyForward:vec4f,settings:vec4f};struct O{@builtin(position)p:vec4f,@location(0)ray:vec3f};@group(0)@binding(0)var smp:sampler;@group(0)@binding(1)var tex:texture_2d<f32>;@group(1)@binding(0)var<uniform>scene:Scene;@vertex fn vs(@builtin(vertex_index)i:u32)->O{let x=f32((i<<1u)&2u);let y=f32(i&2u);let q=vec2f(x*2-1,1-y*2);var o:O;o.p=vec4f(q,1,1);o.ray=normalize(scene.skyForward.xyz+q.x*scene.skyRight.xyz*scene.skyRight.w*scene.skyUp.w+q.y*scene.skyUp.xyz*scene.skyUp.w);return o;}@fragment fn fs(o:O)->@location(0)vec4f{let d=normalize(o.ray);let uv=vec2f(atan2(d.z,d.x)/6.2831853+0.5,acos(clamp(d.y,-1,1))/3.14159265);return textureSample(tex,smp,uv)*vec4f(scene.settings.yzw,1);}`});
+        skyboxPipeline=await device.createRenderPipelineAsync({layout:device.createPipelineLayout({bindGroupLayouts:[textureLayout,sceneLayout3d]}),vertex:{module:skyShader,entryPoint:"vs"},fragment:{module:skyShader,entryPoint:"fs",targets:[{format}]},primitive:{topology:"triangle-list"},depthStencil:{format:"depth24plus",depthWriteEnabled:false,depthCompare:"less-equal"}});
         sampler = device.createSampler({magFilter: "nearest", minFilter: "nearest",
             addressModeU: "repeat", addressModeV: "repeat"});
         const textDecoder = new TextDecoder();
@@ -486,6 +512,9 @@
                     if(!rebuildShaderTextures(shader)){uniformBuffer.destroy();return 0;}shaders.set(id,shader);return 1;
                 } catch(error) { console.error(error);return 0; }
             },
+            material_shader_load: (id, vsPointer, fsPointer) => {
+                try {const vs=device.createShaderModule({code:readText(vsPointer)}),fs=device.createShaderModule({code:readText(fsPointer)});const materialPipeline=device.createRenderPipeline(materialPipelineDescriptor(vs,fs));const uniformBuffer=device.createBuffer({size:2048,usage:GPUBufferUsage.UNIFORM|GPUBufferUsage.COPY_DST});const uniformGroup=device.createBindGroup({layout:uniformLayout,entries:[{binding:0,resource:{buffer:uniformBuffer,size:2048}}]});const shader={pipelines:null,materialPipeline,uniformBuffer,uniformGroup,textureIds:new Array(8).fill(0),textureGroup:null};if(!rebuildShaderTextures(shader)){uniformBuffer.destroy();return 0;}shaders.set(id,shader);return 1;}catch(error){console.error(error);return 0;}
+            },
             shader_unload: id => { const shader=shaders.get(id);if(shader)shader.uniformBuffer.destroy();shaders.delete(id); },
             shader_uniform: (id, location, pointer, size) => {
                 const shader=shaders.get(id);if(!shader||location<0||location>=32)return;
@@ -498,17 +527,17 @@
             mesh_upload: (id, vertices, vertexCount, indices, indexCount) => {
                 const previous=meshes.get(id);if(previous){previous.vertexBuffer.destroy();if(previous.indexBuffer)previous.indexBuffer.destroy();}
                 if(!id||!vertices||vertexCount<=0)return;
-                const vertexBuffer=device.createBuffer({size:Math.max(4,vertexCount*36),usage:GPUBufferUsage.VERTEX|GPUBufferUsage.COPY_DST});
-                device.queue.writeBuffer(vertexBuffer,0,new Uint8Array(wasm.memory.buffer,vertices,vertexCount*36));
+                const vertexBuffer=device.createBuffer({size:Math.max(4,vertexCount*80),usage:GPUBufferUsage.VERTEX|GPUBufferUsage.COPY_DST});
+                device.queue.writeBuffer(vertexBuffer,0,new Uint8Array(wasm.memory.buffer,vertices,vertexCount*80));
                 let indexBuffer=null;if(indices&&indexCount>0){const bytes=indexCount*2,padded=(bytes+3)&~3;indexBuffer=device.createBuffer({size:padded,usage:GPUBufferUsage.INDEX|GPUBufferUsage.COPY_DST});const data=new Uint8Array(padded);data.set(new Uint8Array(wasm.memory.buffer,indices,bytes));device.queue.writeBuffer(indexBuffer,0,data);}
                 meshes.set(id,{vertexBuffer,indexBuffer,vertexCount,indexCount});
             },
             mesh_update: (id, vertices, vertexCount) => {
                 const mesh=meshes.get(id);if(!mesh||!vertices||vertexCount!==mesh.vertexCount)return;
-                device.queue.writeBuffer(mesh.vertexBuffer,0,new Uint8Array(wasm.memory.buffer,vertices,vertexCount*36));
+                device.queue.writeBuffer(mesh.vertexBuffer,0,new Uint8Array(wasm.memory.buffer,vertices,vertexCount*80));
             },
             mesh_unload: id => { const mesh=meshes.get(id);if(mesh){mesh.vertexBuffer.destroy();if(mesh.indexBuffer)mesh.indexBuffer.destroy();}meshes.delete(id); },
-            present: (vertices, count, batches, batchCount, draws3d, drawCount3d, instances3d, instanceCount3d, color, targetId) => {
+            present: (vertices, count, batches, batchCount, draws3d, drawCount3d, instances3d, instanceCount3d, color, targetId, scene3d, bones, boneCount, skyboxId, skyboxTint) => {
                 if (stopped) return;
                 const target=targetId ? textures.get(targetId) : null;
                 if (targetId && !target) return;
@@ -521,13 +550,15 @@
                     view: target ? target.view : context.getCurrentTexture().createView(), loadOp: "clear", storeOp: "store",
                     clearValue: [(color & 255)/255, ((color>>>8)&255)/255, ((color>>>16)&255)/255, (color>>>24)/255]
                  }],depthStencilAttachment:{view:target?target.depthView:depthTexture.createView(),depthLoadOp:"clear",depthStoreOp:"store",depthClearValue:1}});
+                if(scene3d)device.queue.writeBuffer(sceneBuffer3d,0,new Uint8Array(wasm.memory.buffer,scene3d,704));if(bones&&boneCount>0)device.queue.writeBuffer(boneBuffer3d,0,new Uint8Array(wasm.memory.buffer,bones,boneCount*64));
+                const sky=textures.get(skyboxId);if(sky&&sky!==target){pass.setPipeline(skyboxPipeline);pass.setBindGroup(0,sky.group);pass.setBindGroup(1,sceneGroup3d);pass.setScissorRect(0,0,target?target.width:canvas.width,target?target.height:canvas.height);pass.draw(3);}
                 if(instanceCount3d>0&&drawCount3d>0){
-                    device.queue.writeBuffer(instanceBuffer3d,0,new Uint8Array(wasm.memory.buffer,instances3d,instanceCount3d*160));
-                    const commands=new Uint32Array(wasm.memory.buffer,draws3d,drawCount3d*4);pass.setPipeline(pipeline3d);
+                    device.queue.writeBuffer(instanceBuffer3d,0,new Uint8Array(wasm.memory.buffer,instances3d,instanceCount3d*128));
+                    const commands=new Uint32Array(wasm.memory.buffer,draws3d,drawCount3d*12);
                     pass.setScissorRect(0,0,target?target.width:canvas.width,target?target.height:canvas.height);
-                    for(let i=0;i<commands.length;i+=4){const mesh=meshes.get(commands[i]),entry=textures.get(commands[i+1]);if(!mesh||!entry||entry===target)continue;
-                        pass.setVertexBuffer(0,mesh.vertexBuffer);pass.setVertexBuffer(1,instanceBuffer3d,commands[i+2]*160,commands[i+3]*160);pass.setBindGroup(0,entry.group);
-                        if(mesh.indexBuffer){pass.setIndexBuffer(mesh.indexBuffer,"uint16");pass.drawIndexed(mesh.indexCount,commands[i+3],0,0,0);}else pass.draw(mesh.vertexCount,commands[i+3],0,0);
+                    for(let i=0;i<commands.length;i+=12){const mesh=meshes.get(commands[i]),entry=textures.get(commands[i+4]);if(!mesh||!entry||entry===target)continue;const materialEntries=[];let valid=true;for(let slot=0;slot<8;slot++){const texture=textures.get(commands[i+4+slot]);if(!texture||texture===target){valid=false;break;}materialEntries.push({binding:slot*2,resource:texture.sampler||sampler},{binding:slot*2+1,resource:texture.view});}if(!valid)continue;const materialGroup=device.createBindGroup({layout:shaderTextureLayout,entries:materialEntries});const custom=shaders.get(commands[i+3]);pass.setPipeline(custom&&custom.materialPipeline?custom.materialPipeline:pipeline3d);
+                        pass.setVertexBuffer(0,mesh.vertexBuffer);pass.setVertexBuffer(1,instanceBuffer3d,commands[i+1]*128,commands[i+2]*128);pass.setBindGroup(0,entry.group);pass.setBindGroup(1,custom?custom.uniformGroup:defaultUniformGroup3d);pass.setBindGroup(2,materialGroup);pass.setBindGroup(3,sceneGroup3d);
+                        if(mesh.indexBuffer){pass.setIndexBuffer(mesh.indexBuffer,"uint16");pass.drawIndexed(mesh.indexCount,commands[i+2],0,0,0);}else pass.draw(mesh.vertexCount,commands[i+2],0,0);
                     }
                 }
                 if (count) {

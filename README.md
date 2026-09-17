@@ -11,8 +11,8 @@ Native Windows rendering uses Dawn with D3D12. Browser rendering uses WebGPU
 through the small `raygpu.js` platform bridge.
 
 Its familiar C API covers windowing, input, 2D drawing, audio, images, fonts,
-shaders, meshes, glTF 2.0 models, and skeletal animation. Advanced 3D rendering
-is still being built. VR and stereo rendering are outside its scope.
+shaders, meshes, glTF 2.0 models, skeletal animation, configurable lighting,
+fog, PBR materials, and skyboxes. VR and stereo rendering are outside its scope.
 
 ## Quick start
 
@@ -241,10 +241,14 @@ to RayGPU file-loading functions.
   heightmap, and cubic-map mesh generators, tangent generation, OBJ export,
   and C header export.
 - A dedicated GPU 3D pipeline with model/view/projection transforms in WGSL,
-  hardware clipping, perspective-correct texture interpolation, depth testing,
-  nonuniform-scale-safe normals, ambient light, directional diffuse light, and
-  basic specular highlights. The dynamic CPU triangle batch remains dedicated
-  to 2D shapes, sprites, text, and lightweight debug geometry.
+  hardware clipping, perspective-correct interpolation, depth testing, and GPU
+  skeletal skinning. Materials support albedo, metallic, normal,
+  metallic-roughness, occlusion, emission, and two custom texture slots.
+  Cook-Torrance metallic/roughness PBR can be switched to diffuse lighting with
+  `SetPBRMode()`. Scenes support eight directional, point, or spot lights,
+  ambient light, linear/exponential fog, and tinted equirectangular skyboxes.
+  The dynamic CPU triangle batch remains dedicated to 2D shapes, sprites, text,
+  and lightweight debug geometry.
 - Dependency-free glTF 2.0 (`.gltf` and `.glb`) loading with external, data-URI,
   and embedded buffers/textures; flattened node transforms and instances;
   positions, normals, tangents, two UV sets, vertex colors, and 8/16/32-bit
@@ -418,6 +422,36 @@ order. New shaders should use declarations so misspellings are detected and C
 and WGSL stay synchronized. The sampler and uniform snippets above show the
 complete binding contract.
 
+### Custom 3D material shaders
+
+Use `LoadMaterialShader()` or `LoadMaterialShaderFromMemory()` for a shader
+assigned to `material.shader`. These shaders use the same uniform and named
+sampler helpers as 2D shaders, but their vertex contract is fixed so meshes,
+instancing, and GPU skinning remain portable:
+
+| Locations | Value |
+|---:|---|
+| 0, 1, 2, 3 | position, normal, UV0, RGBA8 color |
+| 4, 5 | four `u8` bone IDs and four `f32` bone weights |
+| 6, 7 | tangent and UV1 |
+| 8-11 | model matrix columns |
+| 12, 13, 14 | tint, material parameters, emission color |
+| 15 | `vec4u` skin data: bone offset, count, map flags, reserved |
+
+The material texture pairs are group 2 slots 0 through 7: albedo, metallic,
+normal, metallic-roughness, occlusion, emission, and two custom textures.
+Group 1 binding 0 is the normal 2048-byte custom uniform buffer. Group 3
+binding 0 contains the shared scene data (view-projection matrix, camera,
+ambient light, fog, skybox camera basis, settings, and eight lights); binding 1
+is the read-only bone-matrix storage buffer. Custom shaders must use `vs` and
+`fs` entry points. `SetShaderValueTexture()` supplies either custom slot, or a
+material map can populate it directly. `BeginShaderMode()` is for 2D shaders;
+assign a material shader through `Material.shader`.
+
+`DrawSkybox()` accepts a normal 2D equirectangular panorama. Call it between
+`BeginMode3D()` and `EndMode3D()` before or after the scene geometry; RayGPU
+always renders it behind the geometry.
+
 ## Remaining core, 2D, and audio work
 
 - Directory listing, URL opening, compression, logging callbacks, and
@@ -426,10 +460,6 @@ complete binding contract.
 ## Remaining 3D work
 
 - Draco (`KHR_draco_mesh_compression`) and newer compressed mesh extensions.
-- Material custom shaders, additional texture samplers, and actual GPU
-  skinning.
-- Optional advanced rendering features such as configurable lights, fog, PBR
-  shading, and skyboxes.
 
 ## Current limits
 
@@ -444,9 +474,10 @@ complete binding contract.
 - Images and ordinary textures use RGBA8 internally.
 - glTF loading accepts triangle primitives, flattens node transforms into mesh
   data, uses one armature per selected scene and four joints per vertex, and
-  stores indices as 16-bit values. Required Draco compression and extended PBR
-  materials are not supported. Meshopt supports the EXT codec versions used by
-  meshoptimizer v0.22, rather than newer `KHR_meshopt_compression` codecs.
+  stores indices as 16-bit values. Required Draco compression and optional
+  glTF material extensions are not supported. Meshopt supports the EXT codec
+  versions used by meshoptimizer v0.22, rather than newer
+  `KHR_meshopt_compression` codecs.
   Morph targets are evaluated on the CPU, with up to 256 targets per primitive.
   Appended morph fields extend the raylib-inspired mesh/model type layouts.
 - `LoadImage()` returns the first GIF frame. `LoadImageAnim()` returns all
@@ -456,7 +487,8 @@ complete binding contract.
   with `UnloadImage(image)`. Choose playback timing in your game code.
 - The built-in font contains a small ASCII subset; use a TTF/OTF font for wider
   Unicode coverage.
-- RayGPU supports 256 simultaneous texture slots, 32 custom shaders, and
+- RayGPU supports 256 simultaneous texture slots, 32 custom shaders, eight
+  material samplers, eight scene lights, 16,384 bone matrices per frame, and
   262,144 vertices per frame.
 
 ## License

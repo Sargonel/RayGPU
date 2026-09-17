@@ -39,6 +39,18 @@ Ray GetScreenToWorldRayEx(Vector2 position,Camera camera,int width,int height){
 Ray GetScreenToWorldRay(Vector2 position,Camera camera){return GetScreenToWorldRayEx(position,camera,mr.width,mr.height);}
 void BeginMode3D(Camera3D camera){mr.camera3d=camera;mr.camera3dActive=true;mr.camera2dActive=false;}
 void EndMode3D(void){mr.camera3dActive=false;}
+Light3D CreateLight3D(int type,Vector3 position,Vector3 target,Color color,float intensity,float range){
+    if(type<LIGHT_DIRECTIONAL||type>LIGHT_SPOT)type=LIGHT_POINT;if(intensity<0)intensity=0;if(range<0)range=0;
+    return(Light3D){true,type,position,target,color,intensity,range,0.9f,0.8f};
+}
+void SetLight3D(int index,Light3D light){if(index<0||index>=RAYGPU_MAX_LIGHTS)return;if(light.type<LIGHT_DIRECTIONAL||light.type>LIGHT_SPOT)light.type=LIGHT_POINT;if(light.intensity<0)light.intensity=0;if(light.range<0)light.range=0;mr.lights[index]=light;}
+Light3D GetLight3D(int index){return index>=0&&index<RAYGPU_MAX_LIGHTS?mr.lights[index]:(Light3D){0};}
+void SetAmbientLight(Color color,float intensity){mr.ambientColor=color;mr.ambientIntensity=intensity<0?0:intensity;}
+void SetFog(int mode,Color color,float start,float end,float density){if(mode<FOG_DISABLED||mode>FOG_EXPONENTIAL_SQUARED)mode=FOG_DISABLED;if(start<0)start=0;if(end<=start)end=start+0.001f;if(density<0)density=0;mr.fogMode=mode;mr.fogColor=color;mr.fogStart=start;mr.fogEnd=end;mr.fogDensity=density;}
+void DisableFog(void){mr.fogMode=FOG_DISABLED;}
+void SetPBRMode(bool enabled){mr.pbrEnabled=enabled;}
+bool IsPBRModeEnabled(void){return mr.pbrEnabled;}
+void DrawSkybox(Texture2D panorama,Color tint){if(mr.drawing&&mr.camera3dActive&&IsTextureValid(panorama)){mr.skyboxTexture=panorama.id;mr.skyboxTint=tint;}}
 static bool mr_batch_room(unsigned int texture){
     if(!mr.drawing||mr.vertexCount+3>MR_MAX_VERTICES)return false;
     unsigned int sx=mr.scissorActive?(unsigned int)(mr.scissor.x<0?0:mr.scissor.x):0,sy=mr.scissorActive?(unsigned int)(mr.scissor.y<0?0:mr.scissor.y):0;
@@ -129,7 +141,22 @@ static Matrix mr_model_matrix(Vector3 position,Vector3 axis,float angle,Vector3 
     m.m12=position.x;m.m13=position.y;m.m14=position.z;return m;
 }
 static MRMeshEntry *mr_mesh_entry(unsigned int id){if(!id)return NULL;for(int i=0;i<MR_MAX_MESHES;i++)if(mr.meshes[i].id==id)return &mr.meshes[i];return NULL;}
-static MRGpuVertex *mr_pack_mesh(Mesh mesh){if(!mesh.vertices||mesh.vertexCount<=0)return NULL;MRGpuVertex *packed=MemAlloc((unsigned int)mesh.vertexCount*sizeof(MRGpuVertex));if(!packed)return NULL;float *positions=mesh.animVertices?mesh.animVertices:mesh.vertices,*normals=mesh.animNormals?mesh.animNormals:mesh.normals;for(int i=0;i<mesh.vertexCount;i++){packed[i].x=positions[i*3];packed[i].y=positions[i*3+1];packed[i].z=positions[i*3+2];packed[i].nx=normals?normals[i*3]:0;packed[i].ny=normals?normals[i*3+1]:1;packed[i].nz=normals?normals[i*3+2]:0;packed[i].u=mesh.texcoords?mesh.texcoords[i*2]:0.5f;packed[i].v=mesh.texcoords?mesh.texcoords[i*2+1]:0.5f;packed[i].r=mesh.colors?mesh.colors[i*4]:255;packed[i].g=mesh.colors?mesh.colors[i*4+1]:255;packed[i].b=mesh.colors?mesh.colors[i*4+2]:255;packed[i].a=mesh.colors?mesh.colors[i*4+3]:255;}return packed;}
+static MRGpuVertex *mr_pack_mesh(Mesh mesh){
+    if(!mesh.vertices||mesh.vertexCount<=0)return NULL;
+    MRGpuVertex *packed=MemAlloc((unsigned int)mesh.vertexCount*sizeof(MRGpuVertex));if(!packed)return NULL;
+    memset(packed,0,(size_t)mesh.vertexCount*sizeof(MRGpuVertex));
+    float *positions=mesh.animVertices?mesh.animVertices:mesh.vertices,*normals=mesh.animNormals?mesh.animNormals:mesh.normals;
+    for(int i=0;i<mesh.vertexCount;i++){
+        MRGpuVertex *v=&packed[i];v->x=positions[i*3];v->y=positions[i*3+1];v->z=positions[i*3+2];
+        v->nx=normals?normals[i*3]:0;v->ny=normals?normals[i*3+1]:1;v->nz=normals?normals[i*3+2]:0;
+        v->u=mesh.texcoords?mesh.texcoords[i*2]:0.5f;v->v=mesh.texcoords?mesh.texcoords[i*2+1]:0.5f;
+        v->r=mesh.colors?mesh.colors[i*4]:255;v->g=mesh.colors?mesh.colors[i*4+1]:255;v->b=mesh.colors?mesh.colors[i*4+2]:255;v->a=mesh.colors?mesh.colors[i*4+3]:255;
+        if(mesh.boneIds)memcpy(v->boneIds,mesh.boneIds+i*4,4);if(mesh.boneWeights)memcpy(v->boneWeights,mesh.boneWeights+i*4,4*sizeof(float));
+        if(mesh.tangents)memcpy(v->tangent,mesh.tangents+i*4,4*sizeof(float));else{v->tangent[0]=1;v->tangent[3]=1;}
+        v->u2=mesh.texcoords2?mesh.texcoords2[i*2]:v->u;v->v2=mesh.texcoords2?mesh.texcoords2[i*2+1]:v->v;
+    }
+    return packed;
+}
 static void mr_upload_mesh_data(Mesh mesh,MRMeshEntry *entry){
     MRGpuVertex *packed=mr_pack_mesh(mesh);if(!packed||!entry)return;int indexCount=mesh.indices?mesh.triangleCount*3:0;
 #ifdef _WIN32
@@ -158,7 +185,7 @@ void UnloadMesh(Mesh mesh){MRMeshEntry *entry=mr_mesh_entry(mesh.vaoId);if(entry
     mr_web_mesh_unload(entry->id);
 #endif
     memset(entry,0,sizeof *entry);}MemFree(mesh.vertices);MemFree(mesh.texcoords);MemFree(mesh.texcoords2);MemFree(mesh.normals);MemFree(mesh.tangents);MemFree(mesh.colors);MemFree(mesh.indices);MemFree(mesh.animVertices);MemFree(mesh.animNormals);MemFree(mesh.boneIds);MemFree(mesh.boneWeights);MemFree(mesh.boneMatrices);MemFree(mesh.vboId);if(mesh.morphTargets)for(int i=0;i<mesh.morphTargetCount;i++){MemFree(mesh.morphTargets[i].vertices);MemFree(mesh.morphTargets[i].normals);MemFree(mesh.morphTargets[i].tangents);}MemFree(mesh.morphTargets);MemFree(mesh.morphWeights);MemFree(mesh.morphBaseVertices);MemFree(mesh.morphBaseNormals);MemFree(mesh.morphBaseTangents);}
-Material LoadMaterialDefault(void){Material material={0};material.maps=MemAlloc(11*sizeof(MaterialMap));if(material.maps){memset(material.maps,0,11*sizeof(MaterialMap));material.maps[MATERIAL_MAP_ALBEDO].texture=(Texture2D){mr.white,1,1,1,7};material.maps[MATERIAL_MAP_ALBEDO].color=WHITE;material.maps[MATERIAL_MAP_METALNESS].color=WHITE;material.maps[MATERIAL_MAP_ROUGHNESS].value=1;}return material;}
+Material LoadMaterialDefault(void){Material material={0};material.maps=MemAlloc(11*sizeof(MaterialMap));if(material.maps){memset(material.maps,0,11*sizeof(MaterialMap));for(int i=0;i<11;i++)material.maps[i].color=WHITE;material.maps[MATERIAL_MAP_ALBEDO].texture=(Texture2D){mr.white,1,1,1,7};material.maps[MATERIAL_MAP_METALNESS].value=0;material.maps[MATERIAL_MAP_ROUGHNESS].value=1;material.maps[MATERIAL_MAP_NORMAL].value=1;material.maps[MATERIAL_MAP_OCCLUSION].value=1;material.maps[MATERIAL_MAP_EMISSION].color=BLACK;material.params[0]=1;material.params[1]=1;}return material;}
 bool IsMaterialValid(Material material){return material.maps!=NULL;}
 void UnloadMaterial(Material material){
     if(material.maps)for(int i=0;i<11;i++)if(material.maps[i].texture.id&&material.maps[i].texture.id!=mr.white)UnloadTexture(material.maps[i].texture);
@@ -167,7 +194,36 @@ void UnloadMaterial(Material material){
 void SetMaterialTexture(Material *material,int mapType,Texture2D texture){if(material&&material->maps&&mapType>=0&&mapType<11)material->maps[mapType].texture=texture;}
 BoundingBox GetMeshBoundingBox(Mesh mesh){BoundingBox box={0};if(!mesh.vertices||mesh.vertexCount<=0)return box;box.min=box.max=(Vector3){mesh.vertices[0],mesh.vertices[1],mesh.vertices[2]};for(int i=1;i<mesh.vertexCount;i++){Vector3 p={mesh.vertices[i*3],mesh.vertices[i*3+1],mesh.vertices[i*3+2]};if(p.x<box.min.x)box.min.x=p.x;if(p.y<box.min.y)box.min.y=p.y;if(p.z<box.min.z)box.min.z=p.z;if(p.x>box.max.x)box.max.x=p.x;if(p.y>box.max.y)box.max.y=p.y;if(p.z>box.max.z)box.max.z=p.z;}return box;}
 static Matrix mr_view_projection(Camera3D camera,int width,int height){Vector3 r,u,f;mr_camera_basis(camera,&r,&u,&f);float aspect=height>0?(float)width/height:1,n=0.01f,farPlane=1000.0f;Matrix m={0};if(camera.projection==CAMERA_ORTHOGRAPHIC){float vertical=camera.fovy>0?camera.fovy:1,sx=2/(vertical*aspect),sy=2/vertical,sz=1/(farPlane-n);m.m0=r.x*sx;m.m4=r.y*sx;m.m8=r.z*sx;m.m12=-mr_v3_dot(r,camera.position)*sx;m.m1=u.x*sy;m.m5=u.y*sy;m.m9=u.z*sy;m.m13=-mr_v3_dot(u,camera.position)*sy;m.m2=f.x*sz;m.m6=f.y*sz;m.m10=f.z*sz;m.m14=(-mr_v3_dot(f,camera.position)-n)*sz;m.m15=1;}else{float tangent=sinf(camera.fovy*MR_DEG2RAD*0.5f)/cosf(camera.fovy*MR_DEG2RAD*0.5f);if(tangent<=0)tangent=0.0001f;float sx=1/(tangent*aspect),sy=1/tangent,sz=farPlane/(farPlane-n),cameraForward=mr_v3_dot(f,camera.position);m.m0=r.x*sx;m.m4=r.y*sx;m.m8=r.z*sx;m.m12=-mr_v3_dot(r,camera.position)*sx;m.m1=u.x*sy;m.m5=u.y*sy;m.m9=u.z*sy;m.m13=-mr_v3_dot(u,camera.position)*sy;m.m2=f.x*sz;m.m6=f.y*sz;m.m10=f.z*sz;m.m14=-cameraForward*sz-n*farPlane/(farPlane-n);m.m3=f.x;m.m7=f.y;m.m11=f.z;m.m15=-cameraForward;}return m;}
-static void mr_queue_mesh_instances(Mesh mesh,Material material,const Matrix *transforms,int count){if(!mr.drawing||!mr.camera3dActive||!transforms||count<=0||!mr_mesh_entry(mesh.vaoId))return;if(mr.instanceCount3d>=(unsigned int)MR_MAX_3D_INSTANCES||mr.drawCount3d>=(unsigned int)MR_MAX_3D_DRAWS)return;if(count>MR_MAX_3D_INSTANCES-(int)mr.instanceCount3d)count=MR_MAX_3D_INSTANCES-(int)mr.instanceCount3d;Texture2D texture={mr.white,1,1,1,7};Color tint=WHITE;if(material.maps){if(IsTextureValid(material.maps[MATERIAL_MAP_ALBEDO].texture))texture=material.maps[MATERIAL_MAP_ALBEDO].texture;tint=material.maps[MATERIAL_MAP_ALBEDO].color;}unsigned int first=mr.instanceCount3d;Matrix vp=mr_view_projection(mr.camera3d,mr.targetWidth,mr.targetHeight);for(int i=0;i<count;i++)mr.instances3d[mr.instanceCount3d++]=(MRInstance3D){transforms[i],vp,tint,{0,0,0},mr.camera3d.position,0};MRDraw3D *last=mr.drawCount3d?&mr.draws3d[mr.drawCount3d-1]:NULL;if(last&&last->mesh==mesh.vaoId&&last->texture==texture.id&&last->firstInstance+last->instanceCount==first)last->instanceCount+=(unsigned int)count;else mr.draws3d[mr.drawCount3d++]=(MRDraw3D){mesh.vaoId,texture.id,first,(unsigned int)count};}
+static void mr_prepare_scene3d(int width,int height){
+    Vector3 right,up,forward;mr_camera_basis(mr.camera3d,&right,&up,&forward);float aspect=height>0?(float)width/height:1.0f;
+    float tangent=mr.camera3d.projection==CAMERA_PERSPECTIVE?sinf(mr.camera3d.fovy*MR_DEG2RAD*0.5f)/cosf(mr.camera3d.fovy*MR_DEG2RAD*0.5f):0;
+    mr.scene3d=(MRScene3D){0};mr.scene3d.viewProjection=mr_view_projection(mr.camera3d,width,height);
+    mr.scene3d.camera=(Vector4){mr.camera3d.position.x,mr.camera3d.position.y,mr.camera3d.position.z,1};
+    mr.scene3d.ambient=(Vector4){mr.ambientColor.r/255.0f,mr.ambientColor.g/255.0f,mr.ambientColor.b/255.0f,mr.ambientIntensity};
+    mr.scene3d.fogColor=(Vector4){mr.fogColor.r/255.0f,mr.fogColor.g/255.0f,mr.fogColor.b/255.0f,mr.fogColor.a/255.0f};
+    mr.scene3d.fogParams=(Vector4){(float)mr.fogMode,mr.fogStart,mr.fogEnd,mr.fogDensity};
+    mr.scene3d.skyRight=(Vector4){right.x,right.y,right.z,aspect};mr.scene3d.skyUp=(Vector4){up.x,up.y,up.z,tangent};
+    mr.scene3d.skyForward=(Vector4){forward.x,forward.y,forward.z,(float)mr.camera3d.projection};
+    int lightCount=0;for(int i=0;i<RAYGPU_MAX_LIGHTS;i++){Light3D light=mr.lights[i];if(light.enabled)lightCount++;Vector3 direction=mr_v3_norm(mr_v3_sub(light.target,light.position));MRLightGPU *gpu=&mr.scene3d.lights[i];gpu->positionType=(Vector4){light.position.x,light.position.y,light.position.z,(float)light.type};gpu->directionRange=(Vector4){direction.x,direction.y,direction.z,light.range};gpu->colorIntensity=(Vector4){light.color.r/255.0f,light.color.g/255.0f,light.color.b/255.0f,light.intensity};gpu->spotEnabled=(Vector4){light.innerCutoff,light.outerCutoff,light.enabled?1.0f:0.0f,0};}
+    (void)lightCount;mr.scene3d.settings=(Vector4){mr.pbrEnabled?1.0f:0.0f,mr.skyboxTint.r/255.0f,mr.skyboxTint.g/255.0f,mr.skyboxTint.b/255.0f};
+}
+static void mr_queue_mesh_instances(Mesh mesh,Material material,const Matrix *transforms,int count){
+    if(!mr.drawing||!mr.camera3dActive||!transforms||count<=0||!mr_mesh_entry(mesh.vaoId))return;
+    if(mr.instanceCount3d>=MR_MAX_3D_INSTANCES||mr.drawCount3d>=MR_MAX_3D_DRAWS)return;
+    if(count>MR_MAX_3D_INSTANCES-(int)mr.instanceCount3d)count=MR_MAX_3D_INSTANCES-(int)mr.instanceCount3d;
+    MRShaderEntry *shader=mr_shader(material.shader.id);unsigned int shaderId=shader&&shader->materialShader?shader->id:0;
+    unsigned int textures[RAYGPU_MAX_SHADER_TEXTURES],flags=0;Color tint=WHITE,emission=BLACK;
+    for(int slot=0;slot<RAYGPU_MAX_SHADER_TEXTURES;slot++){
+        unsigned int id=mr.white;if(material.maps&&slot<11&&IsTextureValid(material.maps[slot].texture)){id=material.maps[slot].texture.id;flags|=1u<<slot;}
+        else if(shader&&shader->extraTextures[slot]&&mr_texture(shader->extraTextures[slot]))id=shader->extraTextures[slot];textures[slot]=id;
+    }
+    float metallic=0,roughness=1,normalScale=1,emissionStrength=1;if(material.maps){tint=material.maps[MATERIAL_MAP_ALBEDO].color;emission=material.maps[MATERIAL_MAP_EMISSION].color;metallic=material.maps[MATERIAL_MAP_METALNESS].value;roughness=material.maps[MATERIAL_MAP_ROUGHNESS].value;normalScale=material.maps[MATERIAL_MAP_NORMAL].value;emissionStrength=material.params[1];}
+    if(roughness<=0)roughness=0.04f;if(normalScale==0)normalScale=1;if(emissionStrength==0)emissionStrength=1;
+    unsigned int boneOffset=mr.boneMatrixCount3d,boneCount=0;if(mesh.boneMatrices&&mesh.boneCount>0){boneCount=(unsigned int)mesh.boneCount;if(boneCount>MR_MAX_BONE_MATRICES_FRAME-mr.boneMatrixCount3d)boneCount=MR_MAX_BONE_MATRICES_FRAME-mr.boneMatrixCount3d;if(boneCount){memcpy(mr.boneMatricesFrame+boneOffset,mesh.boneMatrices,(size_t)boneCount*sizeof(Matrix));mr.boneMatrixCount3d+=boneCount;}}
+    unsigned int first=mr.instanceCount3d;
+    for(int i=0;i<count;i++){MRInstance3D *instance=&mr.instances3d[mr.instanceCount3d++];memset(instance,0,sizeof *instance);instance->model=transforms[i];instance->tint=tint;instance->material[0]=metallic;instance->material[1]=roughness;instance->material[2]=normalScale;instance->material[3]=emissionStrength;instance->emission=emission;instance->skin[0]=boneOffset;instance->skin[1]=boneCount;instance->skin[2]=flags;}
+    MRDraw3D *command=&mr.draws3d[mr.drawCount3d++];memset(command,0,sizeof *command);command->mesh=mesh.vaoId;command->firstInstance=first;command->instanceCount=(unsigned int)count;command->shader=shaderId;memcpy(command->textures,textures,sizeof textures);
+}
 void DrawMesh(Mesh mesh,Material material,Matrix transform){mr_queue_mesh_instances(mesh,material,&transform,1);}
 void DrawMeshInstanced(Mesh mesh,Material material,const Matrix *transforms,int instances){mr_queue_mesh_instances(mesh,material,transforms,instances);}
 Model LoadModelFromMesh(Mesh mesh){Model model={0};model.transform=mr_matrix_identity();model.meshCount=1;model.materialCount=1;model.meshes=MemAlloc(sizeof(Mesh));model.materials=MemAlloc(sizeof(Material));model.meshMaterial=MemAlloc(sizeof(int));if(!model.meshes||!model.materials||!model.meshMaterial){MemFree(model.meshes);MemFree(model.materials);MemFree(model.meshMaterial);return(Model){0};}model.meshes[0]=mesh;model.materials[0]=LoadMaterialDefault();model.meshMaterial[0]=0;return model;}
@@ -549,7 +605,6 @@ void UpdateModelMorphAnimation(Model model,int animationIndex,float time){
     }
 }
 static Vector3 mr_gltf_linear(Vector3 v,Matrix m){return(Vector3){m.m0*v.x+m.m4*v.y+m.m8*v.z,m.m1*v.x+m.m5*v.y+m.m9*v.z,m.m2*v.x+m.m6*v.y+m.m10*v.z};}
-static void mr_apply_mesh_skin(Mesh mesh);
 static Vector3 mr_gltf_normal_delta(Vector3 v,Matrix m){float a=m.m0,b=m.m4,c=m.m8,d=m.m1,e=m.m5,f=m.m9,g=m.m2,h=m.m6,i=m.m10;return(Vector3){(e*i-f*h)*v.x+(f*g-d*i)*v.y+(d*h-e*g)*v.z,(c*h-b*i)*v.x+(a*i-c*g)*v.y+(b*g-a*h)*v.z,(b*f-c*e)*v.x+(c*d-a*f)*v.y+(a*e-b*d)*v.z};}
 void SetMeshMorphWeights(Mesh mesh,const float *weights,int count){
     if(!weights||count<=0||count!=mesh.morphTargetCount||!mesh.morphBaseVertices)return;
@@ -560,7 +615,7 @@ void SetMeshMorphWeights(Mesh mesh,const float *weights,int count){
         for(int t=0;t<count;t++){MeshMorphTarget target=mesh.morphTargets[t];float w=weights[t];if(target.vertices)p=mr_v3_add(p,mr_v3_scale(*(Vector3*)(target.vertices+i*3),w));if(target.normals)n=mr_v3_add(n,mr_v3_scale(*(Vector3*)(target.normals+i*3),w));if(target.tangents)tan=mr_v3_add(tan,mr_v3_scale(*(Vector3*)(target.tangents+i*3),w));}
         memcpy(mesh.vertices+i*3,&p,sizeof p);if(mesh.normals){n=mr_v3_norm(n);memcpy(mesh.normals+i*3,&n,sizeof n);}if(mesh.tangents){tan=mr_v3_norm(tan);memcpy(mesh.tangents+i*4,&tan,sizeof tan);}
     }
-    mr_apply_mesh_skin(mesh);
+    if(mesh.animVertices)memcpy(mesh.animVertices,mesh.vertices,(size_t)mesh.vertexCount*3*sizeof(float));if(mesh.animNormals&&mesh.normals)memcpy(mesh.animNormals,mesh.normals,(size_t)mesh.vertexCount*3*sizeof(float));mr_update_mesh_vertices(mesh);
 }
 static bool mr_gltf_load_morphs(MRGltfDoc *doc,int primitive,int sourceMesh,int node,Matrix world,Mesh *mesh,MRGltfAccessor normals,MRGltfAccessor tangents){
     int targets=mr_json_get(doc->json,doc->tokens,doc->tokenCount,primitive,"targets"),count=mr_json_count(doc->tokens,doc->tokenCount,targets);mesh->sourceNode=node<0?-1:node;
@@ -657,8 +712,7 @@ static Matrix mr_matrix_affine_inverse(Matrix m){
     float a=m.m0,b=m.m4,c=m.m8,d=m.m1,e=m.m5,f=m.m9,g=m.m2,h=m.m6,i=m.m10,det=a*(e*i-f*h)-b*(d*i-f*g)+c*(d*h-e*g);if(det>-0.000001f&&det<0.000001f)return mr_matrix_identity();float q=1/det;Matrix r=mr_matrix_identity();r.m0=(e*i-f*h)*q;r.m4=(c*h-b*i)*q;r.m8=(b*f-c*e)*q;r.m1=(f*g-d*i)*q;r.m5=(a*i-c*g)*q;r.m9=(c*d-a*f)*q;r.m2=(d*h-e*g)*q;r.m6=(b*g-a*h)*q;r.m10=(a*e-b*d)*q;r.m12=-(r.m0*m.m12+r.m4*m.m13+r.m8*m.m14);r.m13=-(r.m1*m.m12+r.m5*m.m13+r.m9*m.m14);r.m14=-(r.m2*m.m12+r.m6*m.m13+r.m10*m.m14);return r;
 }
 void UpdateModelAnimationBones(Model model,ModelAnimation anim,int frame){if(!IsModelAnimationValid(model,anim)||anim.frameCount<=0||!anim.framePoses)return;if(frame<0)frame=0;frame%=anim.frameCount;for(int m=0;m<model.meshCount;m++)if(model.meshes[m].boneMatrices)for(int b=0;b<model.boneCount;b++){Matrix bind=mr_gltf_trs(model.bindPose[b].translation,model.bindPose[b].rotation,model.bindPose[b].scale),pose=mr_gltf_trs(anim.framePoses[frame][b].translation,anim.framePoses[frame][b].rotation,anim.framePoses[frame][b].scale);model.meshes[m].boneMatrices[b]=mr_matrix_multiply(pose,mr_matrix_affine_inverse(bind));}}
-static void mr_apply_mesh_skin(Mesh mesh){if(!mesh.animVertices||!mesh.boneIds||!mesh.boneWeights||!mesh.boneMatrices){if(mesh.animVertices)memcpy(mesh.animVertices,mesh.vertices,(size_t)mesh.vertexCount*3*sizeof(float));if(mesh.animNormals&&mesh.normals)memcpy(mesh.animNormals,mesh.normals,(size_t)mesh.vertexCount*3*sizeof(float));mr_update_mesh_vertices(mesh);return;}for(int v=0;v<mesh.vertexCount;v++){Vector3 source={mesh.vertices[v*3],mesh.vertices[v*3+1],mesh.vertices[v*3+2]},normal=mesh.normals?(Vector3){mesh.normals[v*3],mesh.normals[v*3+1],mesh.normals[v*3+2]}:(Vector3){0};Vector3 result={0},normalResult={0};float total=0;for(int j=0;j<4;j++){float weight=mesh.boneWeights[v*4+j];int bone=mesh.boneIds[v*4+j];if(weight<=0||bone<0||bone>=mesh.boneCount)continue;Vector3 p=mr_v3_transform(source,mesh.boneMatrices[bone]),n=mr_transform_direction(normal,mesh.boneMatrices[bone]);result=mr_v3_add(result,mr_v3_scale(p,weight));normalResult=mr_v3_add(normalResult,mr_v3_scale(n,weight));total+=weight;}if(total<=0){result=source;normalResult=normal;}mesh.animVertices[v*3]=result.x;mesh.animVertices[v*3+1]=result.y;mesh.animVertices[v*3+2]=result.z;if(mesh.animNormals){normalResult=mr_v3_norm(normalResult);mesh.animNormals[v*3]=normalResult.x;mesh.animNormals[v*3+1]=normalResult.y;mesh.animNormals[v*3+2]=normalResult.z;}}mr_update_mesh_vertices(mesh);}
-void UpdateModelAnimation(Model model,ModelAnimation anim,int frame){if(!IsModelAnimationValid(model,anim)||anim.frameCount<=0)return;if(frame<0)frame=0;frame%=anim.frameCount;UpdateModelAnimationBones(model,anim,frame);UpdateModelMorphAnimation(model,anim.sourceAnimation,frame*0.017f);for(int m=0;m<model.meshCount;m++)mr_apply_mesh_skin(model.meshes[m]);}
+void UpdateModelAnimation(Model model,ModelAnimation anim,int frame){if(!IsModelAnimationValid(model,anim)||anim.frameCount<=0)return;if(frame<0)frame=0;frame%=anim.frameCount;UpdateModelAnimationBones(model,anim,frame);UpdateModelMorphAnimation(model,anim.sourceAnimation,frame*0.017f);}
 void UnloadModelAnimation(ModelAnimation anim){if(anim.framePoses)for(int i=0;i<anim.frameCount;i++)MemFree(anim.framePoses[i]);MemFree(anim.framePoses);MemFree(anim.bones);}
 void UnloadModelAnimations(ModelAnimation *animations,int animCount){if(animations)for(int i=0;i<animCount;i++)UnloadModelAnimation(animations[i]);MemFree(animations);}
 bool IsModelAnimationValid(Model model,ModelAnimation anim){if(model.boneCount==0&&anim.boneCount==0&&model.morphData){for(int i=0;i<model.morphData->count;i++)if(model.morphData->channels[i].animation==anim.sourceAnimation)return true;return false;}if(model.boneCount<=0||model.boneCount!=anim.boneCount||!model.bones||!anim.bones)return false;for(int i=0;i<model.boneCount;i++)if(model.bones[i].parent!=anim.bones[i].parent)return false;return true;}

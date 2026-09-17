@@ -13,6 +13,7 @@
 #define RAYGPU_VERSION_MINOR 1
 #define RAYGPU_VERSION_PATCH 0
 #define RAYGPU_MAX_SHADER_TEXTURES 8
+#define RAYGPU_MAX_LIGHTS 8
 #define RAYGPU_VERSION "0.1.0-dev"
 
 /* Foundational public types intentionally match raylib's field layout. */
@@ -69,6 +70,10 @@ typedef struct Mesh {
 } Mesh;
 typedef struct MaterialMap { Texture2D texture; Color color; float value; } MaterialMap;
 typedef struct Material { Shader shader; MaterialMap *maps; float params[4]; } Material;
+typedef struct Light3D {
+    bool enabled; int type; Vector3 position,target; Color color;
+    float intensity,range,innerCutoff,outerCutoff;
+} Light3D;
 typedef struct Transform { Vector3 translation; Quaternion rotation; Vector3 scale; } Transform;
 typedef struct BoneInfo { char name[32]; int parent; } BoneInfo;
 typedef struct Model {
@@ -92,6 +97,8 @@ typedef enum MaterialMapIndex {
     MATERIAL_MAP_HEIGHT,MATERIAL_MAP_CUBEMAP,MATERIAL_MAP_IRRADIANCE,
     MATERIAL_MAP_PREFILTER,MATERIAL_MAP_BRDF
 } MaterialMapIndex;
+typedef enum LightType3D { LIGHT_DIRECTIONAL=0,LIGHT_POINT,LIGHT_SPOT } LightType3D;
+typedef enum FogMode { FOG_DISABLED=0,FOG_LINEAR,FOG_EXPONENTIAL,FOG_EXPONENTIAL_SQUARED } FogMode;
 #define MATERIAL_MAP_DIFFUSE MATERIAL_MAP_ALBEDO
 #define MATERIAL_MAP_SPECULAR MATERIAL_MAP_METALNESS
 
@@ -350,6 +357,8 @@ void BeginScissorMode(int x,int y,int width,int height);
 void EndScissorMode(void);
 Shader LoadShader(const char *vsFileName,const char *fsFileName);
 Shader LoadShaderFromMemory(const char *vsCode,const char *fsCode);
+Shader LoadMaterialShader(const char *vsFileName,const char *fsFileName);
+Shader LoadMaterialShaderFromMemory(const char *vsCode,const char *fsCode);
 bool IsShaderValid(Shader shader);
 void UnloadShader(Shader shader);
 void BeginShaderMode(Shader shader);
@@ -362,6 +371,15 @@ void SetShaderValueMatrix(Shader shader,int locIndex,Matrix mat);
 void SetShaderValueTexture(Shader shader,int locIndex,Texture2D texture);
 void BeginMode3D(Camera3D camera);
 void EndMode3D(void);
+Light3D CreateLight3D(int type,Vector3 position,Vector3 target,Color color,float intensity,float range);
+void SetLight3D(int index,Light3D light);
+Light3D GetLight3D(int index);
+void SetAmbientLight(Color color,float intensity);
+void SetFog(int mode,Color color,float start,float end,float density);
+void DisableFog(void);
+void SetPBRMode(bool enabled);
+bool IsPBRModeEnabled(void);
+void DrawSkybox(Texture2D panorama,Color tint);
 Ray GetScreenToWorldRay(Vector2 position,Camera camera);
 Ray GetScreenToWorldRayEx(Vector2 position,Camera camera,int width,int height);
 Vector2 GetWorldToScreen(Vector3 position,Camera camera);
